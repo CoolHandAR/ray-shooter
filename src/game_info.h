@@ -2,6 +2,8 @@
 
 //Lazy hardcoded game data
 
+extern void Monster_Imp_FireBall(Object* obj);
+
 typedef enum
 {
 	MS__IDLE,
@@ -72,34 +74,34 @@ static const MonsterInfo MONSTER_INFO[] =
 		//ANIM
 		{
 			//IDLE
-			NULL, 0, 0, 0, 0, 0,
+			NULL, 0, 0, 0, 1, 1,
 
 			//WALK FORWARD
-			NULL, 0, 0, 0, 4, 0,
+			NULL, 0, 0, 0, 4, 1,
 
 			//WALK FORWARD SIDE
-			NULL, 0, 0, 1, 4, 0,
+			NULL, 0, 0, 1, 4, 1,
 
 			//WALK SIDE
-			NULL, 0, 0, 2, 4, 0,
+			NULL, 0, 0, 2, 4, 1,
 
 			//WALK BACK SIDE
-			NULL, 0, 0, 3, 4, 0,
+			NULL, 0, 0, 3, 4, 1,
 
 			//WALK BACK
-			NULL, 0, 0, 4, 4, 0,
+			NULL, 0, 0, 4, 4, 1,
 
 			//ATTACK FORWARD
-			NULL, 1, 4, 0, 3, 0,
+			Monster_Imp_FireBall, 1, 4, 0, 3, 0,
 
 			//ATTACK FORWARD SIDE
-			NULL, 1, 4, 1, 3, 0,
+			Monster_Imp_FireBall, 1, 4, 1, 3, 0,
 
 			//ATTACK SIDE
-			NULL, 1, 4, 2, 3, 0,
+			Monster_Imp_FireBall, 1, 4, 2, 3, 0,
 
 			//ATTACK BACK SIDE
-			NULL, 1, 4, 3, 3, 0,
+			Monster_Imp_FireBall, 1, 4, 3, 3, 0,
 
 			//ATTACK BACK
 			NULL, 2, 4, 4, 4, 0,
@@ -124,7 +126,32 @@ static const MonsterInfo MONSTER_INFO[] =
 
 	},
 	
+};
 
+typedef struct
+{
+	AnimInfo anim_info[2];
+	int speed;
+	int size;
+	int explosion_damage;
+	int direct_damage;
+} MissileInfo;
 
+static const MissileInfo MISSILE_INFO[] =
+{
+	//SIMPLE FIREBALL
+	{
+		//ANIM
+		{
+			//FLY
+			NULL, 0, 0, 0, 2, 1,
 
+			//EXPLODE
+			NULL, 0, 2, 0, 3, 0,
+		},
+		4, //SPEED
+		1, //SIZE,
+		0, //EXPLOSION DAMAGE
+		5, //DIRECT HIT DAMAGE
+	}
 };

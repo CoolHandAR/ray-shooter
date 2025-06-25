@@ -12,26 +12,6 @@
 static Map s_map;
 static Sprite* s_spritePointers[MAX_OBJECTS];
 
-Object* Map_NewObject()
-{
-	if (s_map.num_objects >= MAX_OBJECTS)
-	{
-		assert(false && "Too many objects");
-	}
-
-	int index = s_map.num_objects;
-
-	Object* obj = &s_map.objects[index];
-
-	obj->sprite.scale_x = 1;
-	obj->sprite.scale_y = 1;
-	obj->id = index;
-	obj->tile_index = NULL_INDEX;
-
-	s_map.num_objects++;
-
-	return obj;
-}
 
 static int CompareSpriteDistances(const void* a, const void* b)
 {
@@ -42,6 +22,33 @@ static int CompareSpriteDistances(const void* a, const void* b)
 	if (arg1->dist < arg2->dist) return 1;
 
 	return 0;
+}
+
+static void Map_UpdateSortedList()
+{
+	int index = 0;
+	int max_index = 0;
+
+	for (int i = 0; i < s_map.num_objects; i++)
+	{
+		Object* obj = &s_map.objects[i];
+
+		if (obj->type != OT__NONE)
+		{
+			max_index = i;
+		}
+
+		if (obj->type == OT__NONE
+			|| obj->type == OT__PLAYER)
+		{
+			continue;
+		}
+
+		s_map.sorted_list[index++] = i;
+	}
+
+	s_map.num_sorted_objects = index;
+	//s_map.num_objects = max_index;
 }
 
 static void Map_UpdateObjectTilemap()
@@ -61,6 +68,62 @@ static void Map_UpdateObjectTilemap()
 
 		obj->tile_index = index;
 	}
+}
+
+static void Map_FreeListStoreID(ObjectID id)
+{
+	if (s_map.num_free_list >= MAX_OBJECTS)
+	{
+		return;
+	}
+
+	s_map.free_list[s_map.num_free_list++] = id;
+}
+
+static ObjectID Map_GetNewObjectIndex()
+{
+	ObjectID id = 0;
+	//get from free list
+	if (s_map.num_free_list > 0)
+	{
+		id = s_map.free_list[s_map.num_free_list - 1];
+		s_map.num_free_list--;
+	}
+	else
+	{
+		id = s_map.num_objects++;
+	}
+
+	return id;
+}
+
+Map* Map_GetMap()
+{
+	return &s_map;
+}
+
+Object* Map_NewObject(ObjectType type)
+{
+	if (s_map.num_objects >= MAX_OBJECTS)
+	{
+		assert(false && "Too many objects");
+	}
+
+	ObjectID index = Map_GetNewObjectIndex();
+
+	Object* obj = &s_map.objects[index];
+
+	obj->sprite.scale_x = 1;
+	obj->sprite.scale_y = 1;
+	obj->id = index;
+	obj->tile_index = NULL_INDEX;
+	obj->type = type;
+
+	s_map.num_objects++;
+
+	Map_UpdateSortedList();
+
+	return obj;
 }
 
 bool Map_Load(const char* filename)
@@ -219,7 +282,7 @@ bool Map_Load(const char* filename)
 					continue;
 				}
 
-				Object* map_object = Map_NewObject();
+				Object* map_object = Map_NewObject(OT__NONE);
 
 				map_object->x = cJSON_GetNumberValue(x_coord) / 64;
 				map_object->y = cJSON_GetNumberValue(y_coord) / 64;
@@ -258,10 +321,25 @@ bool Map_Load(const char* filename)
 				else if (!strcmp(type_value, "monster"))
 				{
 					map_object->type = OT__MONSTER;
-					map_object->hp = 5;
+					map_object->sub_type = SUB__MOB_IMP;
+					map_object->hp = 50;
 					map_object->sprite.img = &assets->imp_texture;
 					map_object->sprite.h_frames = 9;
 					map_object->sprite.v_frames = 9;
+					Sprite_GenerateAlphaSpans(&map_object->sprite);
+
+					Monster_SetState(map_object, 0);
+				}
+				else if (!strcmp(type_value, "pickup_smallhp"))
+				{
+					map_object->type = SUB__PICKUP_SMALLHP;
+					map_object->type = OT__PICKUP;
+					map_object->hp = 5;
+					map_object->sprite.h_frames = 2;
+					map_object->sprite.v_frames = 1;
+					map_object->sprite.img = &assets->pickup_textures;
+					map_object->sprite.frame = 0;
+
 				}
 				if (map_object->type == OT__LIGHT || map_object->type == OT__THING)
 				{
@@ -275,12 +353,12 @@ bool Map_Load(const char* filename)
 	}
 
 	Map_UpdateObjectTilemap();
+	Map_UpdateSortedList();
 
 	cleanup:
 	//cleanup
 	cJSON_Delete(json);
 	free(filestr);
-
 	
 	return result;
 }
@@ -318,7 +396,7 @@ Object* Map_GetObjectAtTile(int x, int y)
 	return &s_map.objects[id];
 }
 
-int Map_Raycast(float p_x, float p_y, float dir_x, float dir_y)
+Object* Map_Raycast(float p_x, float p_y, float dir_x, float dir_y)
 {
 	const int max_tiles = Map_GetTotalTiles();
 
@@ -328,8 +406,6 @@ int Map_Raycast(float p_x, float p_y, float dir_x, float dir_y)
 	//length of ray from one x or y-side to next x or y-side
 	float delta_dist_x = (ray_dir_x == 0) ? 1e30 : fabs(1.0 / ray_dir_x);
 	float delta_dist_y = (ray_dir_y == 0) ? 1e30 : fabs(1.0 / ray_dir_y);
-
-	float wall_dist = 0;
 
 	int step_x = 0;
 	int step_y = 0;
@@ -386,22 +462,23 @@ int Map_Raycast(float p_x, float p_y, float dir_x, float dir_y)
 
 		if (tile != EMPTY_TILE)
 		{
-			return -(tile + 1);
+			return NULL;
 		}
 
 		Object* obj = Map_GetObjectAtTile(map_x, map_y);
 
-		if (obj)
+		//alive object found?
+		if (obj && obj->hp > 0)
 		{
 			if (Trace_LineVsObject(p_x, p_y, dir_x * 1000, dir_y * 1000, obj))
 			{
-				return obj->id;
+				return obj;
 			}
 		}
 	}
 
 
-	return 0;
+	return NULL;
 }
 
 
@@ -446,6 +523,12 @@ void Map_UpdateObjectTile(Object* obj)
 	if (id != NULL_INDEX)
 	{
 		Object* tile_obj = &s_map.objects[id];
+
+		//if we are a missile don't take take anyone's place
+		if (obj->type == OT__MISSILE)
+		{
+			return;
+		}
 
 		//if there is overlap with light or a static object, stop
 		if (tile_obj->type == OT__LIGHT || tile_obj->type == OT__THING)
@@ -520,11 +603,12 @@ void Map_DrawObjects(Image* image, float* depth_buffer, float p_x, float p_y, fl
 {
 	int num_sprites = 0;
 
-	for (int i = 0; i < s_map.num_objects; i++)
+	for (int i = 0; i < s_map.num_sorted_objects; i++)
 	{
-		Object* object = &s_map.objects[i];
+		ObjectID id = s_map.sorted_list[i];
+		Object* object = &s_map.objects[id];
 
-		if (object->hp <= 0 || !object->sprite.img)
+		if (object->type == OT__NONE || !object->sprite.img)
 		{
 			continue;
 		}
@@ -550,11 +634,17 @@ void Map_DrawObjects(Image* image, float* depth_buffer, float p_x, float p_y, fl
 
 void Map_UpdateObjects(float delta)
 {
-	for (int i = 0; i < s_map.num_objects; i++)
-	{
-		Object* obj = &s_map.objects[i];
+	float view_x, view_y, dir_x, dir_y, dir_z, plane_x, plane_y;
+	Player_GetView(&view_x, &view_y, &dir_x, &dir_y, &plane_x, &plane_y);
 
-		if (obj->type == OT__NONE || obj->hp <= 0)
+	float inv_det = 1.0 / (plane_x * dir_y - dir_x * plane_y);
+
+	for (int i = 0; i < s_map.num_sorted_objects; i++)
+	{
+		ObjectID id = s_map.sorted_list[i];
+		Object* obj = &s_map.objects[id];
+
+		if (obj->type == OT__NONE)
 		{
 			continue;
 		}
@@ -563,10 +653,57 @@ void Map_UpdateObjects(float delta)
 		{
 			Monster_Update(obj, delta);
 		}
+		else if (obj->type == OT__MISSILE)
+		{
+			Missile_Update(obj, delta);
+		}
+
+		bool sprite_position_changed = false;
+
+		if (obj->sprite.x != obj->x || obj->sprite.y != obj->y)
+		{
+			sprite_position_changed = true;
+		}
 
 		obj->sprite.x = obj->x;
 		obj->sprite.y = obj->y;
+
+		//translate sprite position to relative to camera
+		float local_sprite_x = obj->sprite.x - view_x;
+		float local_sprite_y = obj->sprite.y - view_y;
+
+		float transform_y = inv_det * (-plane_y * local_sprite_x + plane_x * local_sprite_y);
+
+		//if the sprite is in view and its position changed, request sprite redraw
+		if (transform_y > 0 && sprite_position_changed) 
+		{
+			Render_RedrawSprites();
+		}
 	}
+}
+
+void Map_DeleteObject(Object* obj)
+{
+	ObjectID id = obj->id;
+
+	assert(id < MAX_OBJECTS);
+
+	//remove from object tilemap
+	assert(obj->tile_index < s_map.width * s_map.height);
+
+	if (obj->tile_index >= 0)
+	{
+		s_map.object_tiles[obj->tile_index] = NULL_INDEX;
+	}
+
+	//reset the object
+	memset(obj, 0, sizeof(Object));
+
+	//store the id in free list
+	Map_FreeListStoreID(id);
+
+	//update sorted list
+	Map_UpdateSortedList();
 }
 
 void Map_Destruct()

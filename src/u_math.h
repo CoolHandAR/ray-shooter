@@ -82,6 +82,10 @@ inline double Math_Clampd(double v, double min_v, double max_v)
 {
 	return v < min_v ? min_v : (v > max_v ? max_v : v);
 }
+inline long Math_Clampl(long v, long min_v, long max_v)
+{
+	return v < min_v ? min_v : (v > max_v ? max_v : v);
+}
 
 inline bool Math_IsZeroApprox(float s)
 {
@@ -127,6 +131,18 @@ inline void Math_vec3_scaleadd(vec3 va, vec3 vb, float scale, vec3 dest)
 	dest[0] = va[0] + scale * vb[0];
 	dest[1] = va[1] + scale * vb[1];
 	dest[2] = va[2] + scale * vb[2];
+}
+
+inline void Math_XY_Normalize(float* x, float* y)
+{
+	vec2 v;
+	v[0] = *x;
+	v[1] = *y;
+
+	glm_vec2_normalize(v);
+
+	*x = v[0];
+	*y = v[1];
 }
 
 inline bool Math_vec3_is_zero(vec3 v)

@@ -5,6 +5,7 @@
 #include <string.h>
 #include <math.h>
 #include <stdlib.h>
+#include "u_math.h"
 
 static const float PI = 3.14159265359;
 
@@ -16,62 +17,6 @@ static void SWAP_INT(int* a, int* b)
 	*b = temp;
 }
 
-
-void Sprite_UpdateAnimation(Sprite* sprite)
-{
-	float remaining = 32.5;
-
-	int i = 0;
-
-	while (remaining >= 0)
-	{
-		float speed = sprite->anim_speed_scale;
-		float abs_speed = abs(speed);
-
-		if (speed == 0)
-		{
-			break;
-		}
-
-		int frame_count = sprite->h_frames * sprite->v_frames;
-
-		int last_frame = frame_count - 1;
-
-		if (speed > 0)
-		{
-			if (sprite->_anim_frame_progress >= 1.0)
-			{
-				//anim restart
-				if (sprite->frame >= last_frame)
-				{
-					if (sprite->looping)
-					{
-						sprite->frame = 0;
-					}
-					else
-					{
-						sprite->frame = last_frame;
-					}
-				}
-				else
-				{
-					sprite->frame++;
-				}
-				sprite->_anim_frame_progress = 0.0;
-			}
-
-			float to_process = min((1.0 - sprite->_anim_frame_progress) / abs_speed, remaining);
-			sprite->_anim_frame_progress += to_process * abs_speed;
-			remaining -= to_process;
-		}
-
-		i++;
-		if (i > frame_count)
-		{
-			break;
-		}
-	}
-}
 
 void Video_DrawLine(Image* image, int x0, int y0, int x1, int y1, unsigned char* color)
 {
@@ -134,7 +79,7 @@ void Video_Clear(Image* image, unsigned char c)
 {
 	memset(image->data, (int)c, sizeof(unsigned char) * image->width * image->height * image->numChannels);
 }
-
+#include <main.h>
 void Video_RaycastMap(Image* image, Image* texture, float* depth_buffer, float p_x, float p_y, float p_dirX, float p_dirY, float p_planeX, float p_planeY)
 {
 	const int max_tiles = Map_GetTotalTiles();
@@ -236,18 +181,35 @@ void Video_RaycastMap(Image* image, Image* texture, float* depth_buffer, float p
 			continue;
 		}
 
+		int v_offset = 0;
+		int size_offset = 0;
+
+		if (tile == 2)
+		{
+			int off = 100;
+
+			v_offset = (int)((off / 2) / wall_dist);
+			size_offset = (int)(off / wall_dist);
+		}
+
+		int original_height = 0;
+
 		//Calculate height of collumn
 		int collumn_height = (int)(image->height / wall_dist);
+
+		original_height = collumn_height;
+
+		collumn_height -= size_offset;
 
 		if (collumn_height <= 0)
 		{
 			continue;
 		}
-
+		
 		//calculate lowest and highest pixel to fill in current stripe
-		int draw_start = -collumn_height / 2 + image->height / 2;
+		int draw_start = -collumn_height / 2 + image->height / 2 + v_offset;
 		if (draw_start < 0) draw_start = 0;
-		int draw_end = collumn_height / 2 + image->height / 2;
+		int draw_end = collumn_height / 2 + image->height / 2 + v_offset;
 		if (draw_end >= image->height) draw_end = image->height - 1;
 
 		if (draw_start > image->width || draw_end < 0)
@@ -266,7 +228,7 @@ void Video_RaycastMap(Image* image, Image* texture, float* depth_buffer, float p
 		if (side == 0 && ray_dir_x > 0) tex_x = 64 - tex_x - 1;
 		if (side == 1 && ray_dir_y < 0) tex_x = 64 - tex_x - 1;
 
-		float step = 1.0 * 64 / collumn_height;
+		float step = 1.0 * 64 / original_height;
 		// Starting texture coordinate
 		float tex_pos = (draw_start - image->height / 2 + collumn_height / 2) * step;
 
@@ -278,24 +240,22 @@ void Video_RaycastMap(Image* image, Image* texture, float* depth_buffer, float p
 			tex_pos += step;
 
 			//get tile color
-			unsigned char* tile_color = Image_Get(texture, tex_x + (64 * (tile - 1)), tex_y);
-
-			unsigned char color[4];
+			unsigned char* tile_color = Image_GetFast(texture, tex_x + (64 * (tile - 1)), tex_y);
 			
 			//make y side darker
 			if (side == 1)
 			{
+				unsigned char color[4];
 				for (int l = 0; l < 4; l++)
 				{
 					color[l] = tile_color[l] / 2;
 				}
+				Image_SetFast(image, x, y, color);
 			}
 			else
 			{
-				memcpy(color, tile_color, sizeof(unsigned char) * 4);
+				Image_SetFast(image, x, y, tile_color);
 			}
-
-			Image_Set2(image, x, y, color);
 		}
 
 		//set depth buffer 
@@ -308,6 +268,11 @@ void Video_DrawSprite(Image* image, Sprite* sprite, float* depth_buffer, float p
 	//adapted from https://lodev.org/cgtutor/raycasting3.html
 
 	if (sprite->scale_x <= 0 || sprite->scale_y <= 0)
+	{
+		return;
+	}
+	//completely transparent
+	if (sprite->transparency >= 1)
 	{
 		return;
 	}
@@ -340,10 +305,13 @@ void Video_DrawSprite(Image* image, Sprite* sprite, float* depth_buffer, float p
 #define vMove 0.0
 	int v_move_screen = (int)(vMove / transform_y);
 
-	//calculate height of the sprite on screen
+	int sprite_width = fabs((int)(image->height / (transform_y))) * (1.0 / sprite->scale_x); // same as height of sprite, given that it's square
 	int sprite_height = fabs((int)(image->height / (transform_y))) * (1.0 /  sprite->scale_y); //using "transformY" instead of the real distance prevents fisheye
 
-	sprite_height = min(image->height * 2, sprite_height);
+	if (sprite_height <= 0 || sprite_width <= 0)
+	{
+		return;
+	}
 
 	//calculate lowest and highest pixel to fill in current stripe
 	int draw_start_y = -sprite_height / 2 + image->height / 2 + v_move_screen;
@@ -356,11 +324,6 @@ void Video_DrawSprite(Image* image, Sprite* sprite, float* depth_buffer, float p
 		return;
 	}
 
-	//calculate width of the sprite
-	int sprite_width = fabs((int)(image->height / (transform_y))) * (1.0 / sprite->scale_x); // same as height of sprite, given that it's square
-
-	sprite_width = min(image->width * 2, sprite_width);
-
 	int draw_start_x = -sprite_width / 2 + sprite_screen_x;
 	if (draw_start_x < 0) draw_start_x = 0;
 	int draw_end_x = sprite_width / 2 + sprite_screen_x;
@@ -371,34 +334,28 @@ void Video_DrawSprite(Image* image, Sprite* sprite, float* depth_buffer, float p
 		return;
 	}
 
-	if (transform_y > depth_buffer[draw_start_x] && transform_y > depth_buffer[draw_end_x])
-	{
-		return;
-	}
-
-	if (sprite_height <= 0 || sprite_width <= 0)
-	{
-		return;
-	}
-
 	if (sprite->flip_h)
 	{
 		sprite_offset_x += 1;
 	}
 
+	float transparency = (sprite->transparency > 0) ? (1.0 / min(sprite->transparency, 1)) : 0;
+
 	for (int stripe = draw_start_x; stripe < draw_end_x; stripe++)
 	{
+		if (transform_y >= depth_buffer[stripe])
+		{
+			continue;
+		}
+
+		//depth_buffer[stripe] = transform_y;
+
 		int tex_x = (int)(256 * (stripe - (-sprite_width / 2 + sprite_screen_x)) * sprite_rect_width / sprite_width) / 256;
 
 		if (sprite->flip_h)
 		{
 			tex_x -= 1;
 			tex_x = -tex_x;
-		}
-
-		if (transform_y >= depth_buffer[stripe])
-		{
-			continue;
 		}
 	
 		for (int y = draw_start_y; y < draw_end_y; y++) //for every pixel of the current stripe
@@ -422,8 +379,27 @@ void Video_DrawSprite(Image* image, Sprite* sprite, float* depth_buffer, float p
 				}
 			}
 
-			Image_Set2(image, stripe, y, color);
+			//apply transparency
+			if (transparency > 1)
+			{
+				unsigned char* old_color = Image_Get(image, stripe, y);
 
+				if (!old_color)
+				{
+					continue;
+				}
+
+				//just do directly on the buffer pointer
+				for (int k = 0; k < image->numChannels; k++)
+				{
+					old_color[k] = (old_color[k] / transparency) + (color[k] / 2);
+				}
+
+			}
+			else
+			{
+				Image_Set2(image, stripe, y, color);
+			}
 		}
 		
 	}
@@ -483,6 +459,12 @@ void Video_DrawScreenSprite(Image* image, Sprite* sprite, float p_x, float p_y)
 	{
 		return;
 	}
+	//completely transparent
+	if (sprite->transparency >= 1)
+	{
+		return;
+	}
+
 
 	int offset_x = (sprite->h_frames > 0) ? sprite->frame % sprite->h_frames : 0;
 	int offset_y = (sprite->v_frames > 0) ? sprite->frame / sprite->h_frames : 0;
@@ -490,8 +472,8 @@ void Video_DrawScreenSprite(Image* image, Sprite* sprite, float p_x, float p_y)
 	int rect_width = (sprite->h_frames > 0) ? sprite->img->width / sprite->h_frames : sprite->img->width;
 	int rect_height = (sprite->v_frames > 0) ? sprite->img->height / sprite->v_frames : sprite->img->height;
 
-	float scale_x = sprite->scale_x;
-	float scale_y = sprite->scale_y;
+	float scale_x = 3;
+	float scale_y = 3;
 
 	float d_scale_x = 1.0 / scale_x;
 	float d_scale_y = 1.0 / scale_y;
@@ -499,6 +481,8 @@ void Video_DrawScreenSprite(Image* image, Sprite* sprite, float p_x, float p_y)
 	rect_width *= scale_x;
 	rect_height *= scale_y;
 
+	//sprite->flip_h = true;
+	
 	if (sprite->flip_h)
 	{
 		offset_x += 1;
@@ -507,12 +491,34 @@ void Video_DrawScreenSprite(Image* image, Sprite* sprite, float p_x, float p_y)
 	{
 		offset_y += 1;
 	}
-	
-	for (int x = 0; x < rect_width; x++)
+
+	float transparency = (sprite->transparency > 0) ? (1.0 / min(sprite->transparency, 1)) : 0;
+
+	FrameInfo* frame_info = &sprite->frame_info[sprite->frame];
+
+	int min_x = (sprite->flip_h) ? (rect_width - (frame_info->max_real_x * scale_y)) : frame_info->min_real_x * scale_y;
+	int max_x = (sprite->flip_h) ? (rect_width - (frame_info->min_real_x * scale_y)) : frame_info->max_real_x * scale_y;
+
+	if (sprite->flip_h)
+	{
+		if (min_x > 0) min_x -= 1;
+		max_x += 1;
+	}
+
+	for (int x = min_x; x <= max_x; x++)
 	{
 		int tx = 0;
 		int ty = 0;
 
+		int span_x = (sprite->flip_h) ? (rect_width - x - 1) : x;
+
+		AlphaSpan* span = Sprite_GetFrameAlphaSpan(sprite, span_x * d_scale_x, sprite->frame);
+
+		if (span->min > span->max)
+		{
+			continue;
+		}
+		
 		//flip the sprite horizontally
 		if (sprite->flip_h)
 		{
@@ -523,7 +529,17 @@ void Video_DrawScreenSprite(Image* image, Sprite* sprite, float p_x, float p_y)
 			tx = (x + offset_x * rect_width) * d_scale_x;
 		}
 
-		for (int y = 0; y < rect_height; y++)
+
+		int y_min = (sprite->flip_v) ? (rect_height - (span->max * scale_y)) : span->min * scale_y;
+		int y_max = (sprite->flip_v) ? (rect_height - (span->min * scale_y)) : span->max * scale_y;
+
+		if (sprite->flip_v)
+		{
+			if (y_min > 0) y_min -= 1;
+			y_max += 1;
+		}
+
+		for (int y = y_min; y < y_max ; y++)
 		{
 			//flip the sprite vertically
 			if (sprite->flip_v)
@@ -544,6 +560,7 @@ void Video_DrawScreenSprite(Image* image, Sprite* sprite, float p_x, float p_y)
 			}
 
 			//perform alpha discarding if there is 4 color channels
+			//most pixels should be discarded with alpha spans
 			if (sprite->img->numChannels >= 4)
 			{
 				if (color[3] < 128)
@@ -552,7 +569,48 @@ void Video_DrawScreenSprite(Image* image, Sprite* sprite, float p_x, float p_y)
 				}
 			}
 
-			Image_Set2(image, x + p_x, y + p_y, color);
+			//apply transparency
+			if (transparency > 1)
+			{
+				unsigned char* old_color = Image_Get(image, x + p_x, y + p_y);
+
+				if (!old_color)
+				{
+					continue;
+				}
+
+				//just do directly on the buffer pointer
+				for (int k = 0; k < image->numChannels; k++)
+				{
+					old_color[k] = (old_color[k] / transparency) + (color[k] / 2);
+				}
+
+			}
+			else
+			{
+				Image_Set2(image, x + p_x, y + p_y, color);
+			}
+
+			
+		}
+	}
+
+}
+
+void Video_Shade(Image* image, ShaderFun shader_fun, int x0, int y0, int x1, int y1)
+{
+	//clamp all the values
+	x0 = Math_Clampl(x0, 0, image->width);
+	y0 = Math_Clampl(y0, 0, image->height);
+
+	x1 = Math_Clampl(x1, 0, image->width);
+	y1 = Math_Clampl(y1, 0, image->height);
+
+	for (int x = x0; x < x1; x++)
+	{
+		for (int y = y0; y < y1; y++)
+		{
+			shader_fun(image, x, y, 0, 0);
 		}
 	}
 

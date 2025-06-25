@@ -21,14 +21,18 @@
 #include "g_common.h"
 #include "r_common.h"
 #include "utility.h"
-
-const float PI = 3.14159265359;
+#include "main.h"
 
 #define WINDOW_WIDTH 800
 #define WINDOW_HEIGHT 800
 
-int map_open = 0;
+typedef struct
+{
+	float delta;
+	uint64_t ticks;
+} EngineData;
 
+static EngineData s_engine;
 
 static bool Shader_checkCompileErrors(unsigned int p_object, const char* p_type)
 {
@@ -62,24 +66,27 @@ static bool Shader_checkCompileErrors(unsigned int p_object, const char* p_type)
 static void WindowCallback(GLFWwindow* window, int width, int height)
 {
 	glViewport(0, 0, width, height);
+
+	//Render_ResizeWindow(width, height);
 }
 static void MouseCallback(GLFWwindow* window, double x, double y)
 {
 	Player_MouseCallback(x, y);
 }
-static int CompareSpriteDistances(const void* a, const void* b)
+
+uint64_t Engine_GetTicks()
 {
-	Sprite* arg1 = (Sprite*)a;
-	Sprite* arg2 = (Sprite*)b;
-
-	if (arg1->dist > arg2->dist) return -1;
-	if (arg1->dist < arg2->dist) return 1;
-
-	return 0;
+	return s_engine.ticks;
+}
+float Engine_GetDeltaTime()
+{
+	return s_engine.delta;
 }
 
 int main()
 {
+	memset(&s_engine, 0, sizeof(EngineData));
+
 	if (!Game_LoadAssets())
 	{
 		printf("ERROR::Failed to load game assets!\n");
@@ -198,8 +205,8 @@ int main()
 
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, WINDOW_WIDTH, WINDOW_HEIGHT, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 
 	//setup quad vao and vbo
@@ -236,47 +243,10 @@ int main()
 
 	glBindTexture(GL_TEXTURE_2D, texture);
 
-	//main framebuffer
-	Image framebuffer;
-	Image_Create(&framebuffer, WINDOW_WIDTH, WINDOW_HEIGHT, 4);
-
-	//copy framebuffer
-	Image clear_framebuffer;
-	Image_Create(&clear_framebuffer, WINDOW_WIDTH, WINDOW_HEIGHT, 4);
-
-	float* depth_buffer = malloc(sizeof(float) * WINDOW_WIDTH);
-
-	if (!depth_buffer)
-	{
-		return -1;
-	}
-
-	memset(depth_buffer, 1e3, sizeof(float) * WINDOW_WIDTH);
-
-	
-	//split video
-	unsigned char floor_color[4] = { 128, 128, 128, 255 };
-	unsigned char ceilling_color[4] = { 128, 128, 159, 255 };
-	for (int x = 0; x < WINDOW_WIDTH; x++)
-	{
-		for (int y = 0; y < WINDOW_HEIGHT; y++)
-		{
-			if (y < WINDOW_HEIGHT / 2)
-			{
-				Image_Set2(&clear_framebuffer, x, y, ceilling_color);
-			}
-			else
-			{
-				Image_Set2(&clear_framebuffer, x, y, floor_color);
-			}
-		}
-	}
-
-	
+	Render_Init(WINDOW_WIDTH, WINDOW_HEIGHT);
 
 	float lastTime = 0;
 	float currentTime = 0;
-	int ticks = 0;
 
 	GameAssets* assets = Game_GetAssets();
 
@@ -287,73 +257,42 @@ int main()
 	float view_plane_x = 0;
 	float view_plane_y = 0;
 
+	mat4 proj;
+	glm_ortho(0, 1280, 720, 0, -1, 1, proj);
 
-	//glfwSwapInterval(1);
+	unsigned id = glGetUniformLocation(shader_id, "u_proj");
+	glUniformMatrix4fv(id, 1, GL_FALSE, proj);
+
+//	glfwSwapInterval(0);
 
 	//MAIN LOOP
 	while (!glfwWindowShouldClose(window))
 	{
 		currentTime = glfwGetTime();
-		float dt = currentTime - lastTime;
+		s_engine.delta = currentTime - lastTime;
 		lastTime = currentTime;
 
-		Player_Update(window, dt);
-		Map_UpdateObjects(dt);
+		Player_Update(window, s_engine.delta);
+		Map_UpdateObjects(s_engine.delta);
 
 		Player_GetView(&view_x, &view_y, &view_dir_x, &view_dir_y, &view_plane_x, &view_plane_y);
 
-		//clear main framebuffer
-		Video_Clear(&framebuffer, 255);		
-		memset(depth_buffer, 1e6, sizeof(float) * WINDOW_WIDTH);
+		Render_View(view_x, view_y, view_dir_x, view_dir_y, view_plane_x, view_plane_y);
 
-		Image_Copy(&framebuffer, &clear_framebuffer);
-
-		//raycast and render all wall tiles
-		Video_RaycastMap(&framebuffer, &assets->wall_textures, depth_buffer, view_x, view_y, view_dir_x, view_dir_y, view_plane_x, view_plane_y);
-
-		//sort and draw map objects
-		Map_DrawObjects(&framebuffer, depth_buffer, view_x, view_y, view_dir_x, view_dir_y, view_plane_x, view_plane_y);
-
-		//draw player stuff (gun and hud)
-		Player_Draw(&framebuffer);
-
-		
-		ticks++;
-		
-
-		if (map_open)
-		{
-			int map_width, map_height;
-			Map_GetSize(&map_width, &map_height);
-
-			int rect_width, rect_height;
-			rect_width = framebuffer.width / map_width;
-			rect_height = framebuffer.height / map_height;
-
-			unsigned char player_dot_color[4] = { 255, 0, 255, 255 };
-			//Video_DrawRectangle(&framebuffer, player_x * rect_width, player_y * rect_height, 5, 5, player_dot_color);
-		}
-			
-		//upload video bytes and render quad
-		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, WINDOW_WIDTH, WINDOW_HEIGHT, GL_RGBA, GL_UNSIGNED_BYTE, framebuffer.data);
-		glClear(GL_COLOR_BUFFER_BIT);
-		glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
-		
 		glfwSwapBuffers(window);
 		glfwPollEvents();
+
+		s_engine.ticks++;
 	}
-
-
-	free(depth_buffer);
 
 	Map_Destruct();
 	Game_DestructAssets();
 
-	Image_Destruct(&framebuffer);
-	Image_Destruct(&clear_framebuffer);
+	Render_ShutDown();
 
 	glfwDestroyWindow(window);
 	glfwTerminate();
 
 	return 0;
 }
+

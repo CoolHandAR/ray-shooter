@@ -4,6 +4,8 @@
 #include <math.h>
 #include <cglm/cglm.h>
 
+#include "main.h"
+
 #define PLAYER_SPEED 10
 
 typedef struct
@@ -15,23 +17,44 @@ typedef struct
 	int move_x;
 	int move_y;
 	int slow_move;
+	float gun_timer;
 } PlayerData;
 
 static PlayerData player;
 
 static void Player_ShootGun()
 {
-	int hit = Map_Raycast(player.obj->x, player.obj->y, player.dir_x, player.dir_y);
+	if (player.gun_timer > 0)
+	{
+		return;
+	}
+
+	float spread = 3;
+	for (int i = 0; i < 8; i++)
+	{
+		float randomf = (rand() & 0x7fff) / (float)0x7fff;
+
+		if (rand() % 100 > 50)
+		{
+			randomf = -randomf;
+		}
+		
+		Object* hit = Map_Raycast(player.obj->x, player.obj->y, player.dir_x + randomf, player.dir_y + randomf);
+
+		if (hit && hit->type == OT__MONSTER)
+		{
+			Object_Hurt(hit, player.obj, 5);
+		}
+	}
+
+	//Object_Missile(player.obj, NULL);
+
+	
 
 
-	if (hit >= 0)
-	{
-		printf("hit monster %i \n", hit);
-	}
-	else
-	{
-		printf("hit wall %i \n", -(hit - 1));
-	}
+	player.gun_sprite.playing = true;
+	player.gun_sprite.frame = 1;
+	player.gun_timer = 1.35;
 
 }
 
@@ -61,7 +84,6 @@ static void Player_ProcessInput(GLFWwindow* window)
 	{
 		slow_move = 1;
 	}
-	
 	if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS)
 	{
 		Player_ShootGun();
@@ -79,7 +101,7 @@ void Player_Init()
 	int spawn_x, spawn_y;
 	Map_GetSpawnPoint(&spawn_x, &spawn_y);
 
-	player.obj = Map_NewObject();
+	player.obj = Map_NewObject(OT__PLAYER);
 
 	player.obj->type = OT__PLAYER;	
 
@@ -101,11 +123,36 @@ void Player_Init()
 	player.gun_sprite.frame = 0;
 	player.gun_sprite.flip_h = false;
 	player.gun_sprite.flip_v = false;
+	player.gun_sprite.looping = false;
+	player.gun_sprite.transparency = 0.0;
+	player.gun_sprite.frame_count = 10;
+	player.obj->hp = 5;
+
+	Sprite_GenerateAlphaSpans(&player.gun_sprite);
 }
 
 Object* Player_GetObj()
 {
 	return player.obj;
+}
+
+void Player_HandlePickup(Object* obj)
+{
+	switch (obj->sub_type)
+	{
+	case SUB__PICKUP_SMALLHP:
+	{
+		obj->hp += 5;
+		break;
+	}
+	default:
+	{
+		break;
+	}
+	}
+
+	//delete the object
+	Map_DeleteObject(obj);
 }
 
 void Player_Update(GLFWwindow* window, float delta)
@@ -119,9 +166,17 @@ void Player_Update(GLFWwindow* window, float delta)
 	Move_Object(player.obj, (player.move_x * player.dir_x) * speed, (player.move_x * player.dir_y) * speed);
 	Move_Object(player.obj, (player.move_y * player.plane_x) * speed, (player.move_y * player.plane_y) * speed);
 
-	Sprite_UpdateAnimation(&player.gun_sprite);
+	Sprite_UpdateAnimation(&player.gun_sprite, delta);
 
-	player.gun_sprite.looping = true;
+	if (!player.gun_sprite.playing)
+	{
+		player.gun_sprite.frame = 0;
+	}
+
+	player.obj->dir_x = player.dir_x;
+	player.obj->dir_y = player.dir_y;
+
+	player.gun_timer -= delta;
 }
 
 void Player_GetView(float* r_x, float* r_y, float* r_dirX, float* r_dirY, float* r_planeX, float* r_planeY)
