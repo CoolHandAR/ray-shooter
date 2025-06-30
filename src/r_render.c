@@ -13,6 +13,7 @@ typedef struct
 	Image wall_buffer;
 
 	float* depth_buffer;
+	float* wall_depth_buffer;
 
 	int w, h;
 
@@ -81,6 +82,7 @@ void Render_ShutDown()
 	Image_Destruct(&s_renderCore.wall_buffer);
 
 	free(s_renderCore.depth_buffer);
+	free(s_renderCore.wall_depth_buffer);
 }
 
 void Render_RedrawWalls()
@@ -104,14 +106,28 @@ void Render_ResizeWindow(int width, int height)
 		free(s_renderCore.depth_buffer);
 	}
 
-	s_renderCore.depth_buffer = malloc(sizeof(float) * width);
+	s_renderCore.depth_buffer = malloc(sizeof(float) * width * height);
 
 	if (!s_renderCore.depth_buffer)
 	{
 		return;
 	}
 
-	memset(s_renderCore.depth_buffer, 1e3, sizeof(float) * width);
+	memset(s_renderCore.depth_buffer, 1e3, sizeof(float) * width * height);
+
+	if (s_renderCore.wall_depth_buffer)
+	{
+		free(s_renderCore.wall_depth_buffer);
+	}
+
+	s_renderCore.wall_depth_buffer = malloc(sizeof(float) * width * height);
+
+	if (!s_renderCore.wall_depth_buffer)
+	{
+		return;
+	}
+
+	memset(s_renderCore.wall_depth_buffer, 1e3, sizeof(float) * width * height);
 
 	//split video
 	unsigned char floor_color[4] = { 128, 128, 128, 255 };
@@ -152,16 +168,18 @@ void Render_View(float x, float y, float dir_x, float dir_y, float plane_x, floa
 	{
 		Image_Copy(&s_renderCore.wall_buffer, &s_renderCore.clear_framebuffer);
 
-		//clear depth buffer
-		memset(s_renderCore.depth_buffer, 1e6, sizeof(float) * s_renderCore.w);
+		//clear wall depth buffer
+		memset(s_renderCore.wall_depth_buffer, (int)DEPTH_CLEAR, sizeof(float) * s_renderCore.w * s_renderCore.h);
 
-		Video_RaycastMap(&s_renderCore.wall_buffer, &assets->wall_textures, s_renderCore.depth_buffer, x, y, dir_x, dir_y, plane_x, plane_y);
+		Video_RaycastMap(&s_renderCore.wall_buffer, &assets->wall_textures, s_renderCore.wall_depth_buffer, x, y, dir_x, dir_y, plane_x, plane_y);
 	}
 	
 	//draw map objects and player sprites
 	if (s_renderCore.redraw_sprites || s_renderCore.redraw_walls)
 	{
 		Image_Copy(&s_renderCore.framebuffer, &s_renderCore.wall_buffer);
+
+		memcpy(s_renderCore.depth_buffer, s_renderCore.wall_depth_buffer, sizeof(float) * s_renderCore.w * s_renderCore.h);
 
 		//sort and draw map objects
 		Map_DrawObjects(&s_renderCore.framebuffer, s_renderCore.depth_buffer, x, y, dir_x, dir_y, plane_x, plane_y);

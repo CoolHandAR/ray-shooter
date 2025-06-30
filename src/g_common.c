@@ -5,6 +5,8 @@
 #include "game_info.h"
 #include "u_math.h"
 
+#include "sound.h"
+
 GameAssets assets;
 
 bool Game_LoadAssets()
@@ -35,6 +37,32 @@ bool Game_LoadAssets()
 	{
 		return false;
 	}
+	if (!Image_CreateFromPath(&assets.minigun_texture, "assets/minigun_sheet.png"))
+	{
+		return false;
+	}
+
+	assets.wall_textures.h_frames = 5;
+	assets.wall_textures.v_frames = 1;
+
+	assets.decoration_textures.h_frames = 4;
+	assets.decoration_textures.v_frames = 1;
+
+	assets.weapon_textures.h_frames = 10;
+	assets.weapon_textures.v_frames = 1;
+
+	assets.pickup_textures.h_frames = 4;
+	assets.pickup_textures.v_frames = 1;
+
+	assets.imp_texture.h_frames = 9;
+	assets.imp_texture.v_frames = 9;
+
+	assets.missile_textures.h_frames = 5;
+	assets.missile_textures.v_frames = 1;
+
+	assets.minigun_texture.h_frames = 3;
+	assets.minigun_texture.v_frames = 1;
+
 	return true;
 }
 
@@ -46,11 +74,19 @@ void Game_DestructAssets()
 	Image_Destruct(&assets.imp_texture);
 	Image_Destruct(&assets.pickup_textures);
 	Image_Destruct(&assets.missile_textures);
+	Image_Destruct(&assets.minigun_texture);
 }
 
 GameAssets* Game_GetAssets()
 {
 	return &assets;
+}
+
+void Game_ChangeLevel()
+{
+	Map_Load("test2.json");
+
+	Player_Init();
 }
 
 void Explosion(Object* obj, float size, int damage)
@@ -105,9 +141,11 @@ bool Move_CheckStep(Object* obj, float p_stepX, float p_stepY, float p_size)
 	int x2 = (obj->x + p_size) + p_stepX;
 	int y2 = (obj->y + p_size) + p_stepY;
 
-	for (int x = x1; x < x2; x++)
+	obj->col_object = NULL;
+
+	for (int x = x1; x <= x2; x++)
 	{
-		for (int y = y1; y < y2; y++)
+		for (int y = y1; y <= y2; y++)
 		{
 			if (Map_GetTile(x, y) != EMPTY_TILE)
 			{
@@ -124,66 +162,10 @@ bool Move_CheckStep(Object* obj, float p_stepX, float p_stepY, float p_size)
 					continue;
 				}
 
-				//some objects are ignored from collisions
-				if (tile_object->type == OT__LIGHT || tile_object->hp <= 0)
+				if (!Object_HandleObjectCollision(obj, tile_object))
 				{
-					continue;
+					return false;
 				}
-				//handle pickups
-				if (tile_object->type == OT__PICKUP)
-				{
-					//pickup pickups for player
-					if (obj->type == OT__PLAYER)
-					{
-						Player_HandlePickup(tile_object);
-					}
-					
-					//pickups dont block movement
-					continue;
-				}
-				//we have collided with a missile
-				if (tile_object->type == OT__MISSILE)
-				{
-					//dont collide if we are the owner
-					if (tile_object->owner == obj)
-					{
-						continue;
-					}
-					//dont collide if we are a missile
-					if (obj->type == OT__MISSILE)
-					{
-						continue;
-					}
-
-					//perform direct hit damage
-					Missile_DirectHit(tile_object, obj);
-
-					//explode the missile
-					Missile_Explode(tile_object);
-
-					//missiles dont block movement
-					continue;
-				}
-				//we are a missile
-				if (obj->type == OT__MISSILE)
-				{
-					//dont collide if hit the owner
-					if (obj->owner == tile_object)
-					{
-						continue;
-					}
-					//dont collide if hit a missile
-					if (obj->type == OT__MISSILE)
-					{
-						continue;
-					}
-
-					//if we have collided with player or a monster
-					//perform direct hit damage
-					Missile_DirectHit(obj, tile_object);
-				}
-				
-				return false;
 			}
 		}
 	}
@@ -200,35 +182,292 @@ bool Move_Object(Object* obj, float p_moveX, float p_moveY)
 		return false;
 	}
 
+	float old_x = obj->x;
+	float old_y = obj->y;
+
 	//try to move with full direction
-	if (Move_CheckStep(obj, p_moveX, p_moveY, 1))
+	if (Move_CheckStep(obj, p_moveX, p_moveY, obj->size))
 	{
 		obj->x = obj->x + p_moveX;
 		obj->y = obj->y + p_moveY;
-		Map_UpdateObjectTile(obj);
-		return true;
+			
+		if (Map_UpdateObjectTile(obj))
+		{
+			return true;
+		}
 	}
+
+	obj->x = old_x;
+	obj->y = old_y;
 
 	//try to move only x
-	if (Move_CheckStep(obj, p_moveX, 0, 1))
+	if (Move_CheckStep(obj, p_moveX, 0, obj->size))
 	{
 		obj->x = obj->x + p_moveX;
-		Map_UpdateObjectTile(obj);
-		return true;
+
+		if (Map_UpdateObjectTile(obj))
+		{
+			return true;
+		}
 	}
 
+	obj->x = old_x;
+	obj->y = old_y;
+
 	//try to move only y
-	if (Move_CheckStep(obj, 0, p_moveY, 1))
+	if (Move_CheckStep(obj, 0, p_moveY, obj->size))
 	{
 		obj->y = obj->y + p_moveY;
-		Map_UpdateObjectTile(obj);
-		return true;
+
+		if (Map_UpdateObjectTile(obj))
+		{
+			return true;
+		}
 	}
 
 	//movement failed completely
 	//so don't move
+	obj->x = old_x;
+	obj->y = old_y;
 
 	return false;
+}
+
+bool Move_CheckArea(Object* obj, float x, float y, float size)
+{
+	int x1 = x - size;
+	int y1 = y - size;
+
+	int x2 = x + size;
+	int y2 = y + size;
+
+	for (int x = x1; x <= x2; x++)
+	{
+		for (int y = y1; y <= y2; y++)
+		{
+			if (Map_GetTile(x, y) != EMPTY_TILE)
+			{
+				return false;
+			}
+
+			Object* tile_object = Map_GetObjectAtTile(x, y);
+
+			if (tile_object != NULL)
+			{
+				//ignore self
+				if (tile_object == obj)
+				{
+					continue;
+				}
+
+				if (!Object_HandleObjectCollision(obj, tile_object))
+				{
+					return false;
+				}
+			}
+		}
+	}
+
+	return true;
+}
+
+bool Move_Unstuck(Object* obj)
+{
+	for (int i = 0; i < 8; i++)
+	{
+		float x_random = Math_randf();
+		float y_random = Math_randf();
+
+		int x_sign = (rand() % 50 > 50) ? 1 : -1;
+		int y_sign = (rand() % 50 > 50) ? 1 : -1;
+
+		if (Move_Object(obj, x_random * x_sign, y_random * y_sign))
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+bool Move_Teleport(Object* obj, float x, float y)
+{
+	int map_width, map_height;
+	Map_GetSize(&map_width, &map_height);
+
+	//out of bounds
+	if (x < 0 || y < 0 || x + 1 > map_width || y + 1 > map_height)
+	{
+		return false;
+	}
+	
+	float old_x = obj->x;
+	float old_y = obj->y;
+
+	//try teleporting at the direct path
+	if (Move_CheckArea(obj, x, y, 1))
+	{
+		obj->x = x;
+		obj->y = y;
+
+		//last check
+		if (Map_UpdateObjectTile(obj))
+		{
+			return true;
+		}
+
+		//failed
+		obj->x = old_x;
+		obj->y = old_y;
+	}
+
+	int map_x = (int)obj->x;
+	int map_y = (int)obj->y;
+
+	int target_x = (int)x;
+	int target_y = (int)y;
+	
+	//try other tiles in a grid area
+	const int TEST_SIZE = 2;
+
+	int x1 = target_x - TEST_SIZE;
+	int y1 = target_y - TEST_SIZE;
+
+	int x2 = target_x + TEST_SIZE;
+	int y2 = target_y + TEST_SIZE;
+
+	for (int x = x1; x < x2; x++)
+	{
+		for (int y = y1; y < y2; y++)
+		{
+			if (Move_CheckArea(obj, x, y, 1))
+			{
+				obj->x = x;
+				obj->y = y;
+
+				//last check
+				if (Map_UpdateObjectTile(obj))
+				{
+					return true;
+				}
+
+				//failed
+				obj->x = old_x;
+				obj->y = old_y;
+			}
+		}
+	}
+	
+	//failed
+	obj->x = old_x;
+	obj->y = old_y;
+
+	return false;
+}
+
+bool Move_Door(Object* obj, float delta)
+{
+	// 0 == door open
+	// 1 == door closed
+
+	if (obj->type != OT__DOOR)
+	{
+		return false;
+	}
+
+	if (obj->state == DOOR_CLOSE && obj->flags & OBJ_FLAG__DOOR_NEVER_CLOSE)
+	{
+		obj->move_timer = 0;
+		obj->state == DOOR_SLEEP;
+		return false;
+	}
+	else if (obj->state == DOOR_SLEEP)
+	{
+		//door is open
+		if (obj->move_timer == 0 && !(obj->flags & OBJ_FLAG__DOOR_NEVER_CLOSE))
+		{
+			obj->stop_timer += delta;
+
+			//close the door
+			if (obj->stop_timer >= DOOR_AUTOCLOSE_TIME)
+			{
+				obj->state = DOOR_CLOSE;
+			}
+			else
+			{
+				return false;
+			}
+		}
+		else
+		{
+			return false;
+		}		
+	}
+
+	bool just_moved = false;
+
+	if (obj->move_timer == 1 || obj->move_timer == 0)
+	{
+		just_moved = true;
+
+		Map* map = Map_GetMap();
+		
+		//lazy check all objects if we can move safely
+		//since we dont allow objects to take doors tile
+		//need to seperate static and moving tiles
+		for (int i = 0; i < map->num_objects; i++)
+		{
+			Object* map_obj = &map->objects[i];
+
+			if (map_obj == obj)
+			{
+				continue;
+			}
+	
+			if ((int)map_obj->x == obj->x && (int)map_obj->y == (int)obj->y || obj->col_object == map_obj)
+			{
+				obj->state = DOOR_SLEEP;
+				obj->stop_timer = 0;
+				return false;
+			}
+		}
+	}
+
+	if (just_moved)
+	{
+		//play the sound
+		Sound_EmitWorldTemp(SOUND__DOOR_ACTION, obj->x, obj->y, 0, 0);
+	}
+
+	//open the door
+	if (obj->state == DOOR_OPEN)
+	{
+		obj->move_timer -= delta;
+
+		if (obj->move_timer <= 0)
+		{
+			obj->move_timer = 0;
+			obj->stop_timer = 0;
+			obj->state = DOOR_SLEEP;
+		}
+	}
+	else if (obj->state == DOOR_CLOSE)
+	{
+		obj->move_timer += delta;
+
+		if (obj->move_timer >= 1)
+		{
+			obj->stop_timer = 0;
+			obj->move_timer = 1;
+			obj->state = DOOR_SLEEP;
+		}
+	}
+
+	//redrawn the walls
+	Render_RedrawWalls();
+
+
+	return true;
 }
 
 void Missile_Update(Object* obj, float delta)
@@ -259,15 +498,26 @@ void Missile_Update(Object* obj, float delta)
 		return;
 	}
 
+
 	float speed = missile_info->speed * delta;
 
-	//we have moved fully
 	if (Move_CheckStep(obj, obj->dir_x * speed, obj->dir_y * speed, 1))
 	{
+		float old_x = obj->x;
+		float old_y = obj->y;
+
 		obj->x = obj->x + (obj->dir_x * speed);
 		obj->y = obj->y + (obj->dir_y * speed);
-		Map_UpdateObjectTile(obj);
-		return;
+
+		//we have moved fully
+		if (Map_UpdateObjectTile(obj))
+		{
+			return;
+		}
+
+		obj->x = old_x;
+		obj->y = old_y;
+	
 	}
 
 	//missile exploded
@@ -276,6 +526,12 @@ void Missile_Update(Object* obj, float delta)
 
 void Missile_DirectHit(Object* obj, Object* target)
 {
+	//already exploded
+	if (obj->flags & OBJ_FLAG__EXPLODING)
+	{
+		return;
+	}
+
 	if (obj->owner != target)
 	{
 		const MissileInfo* missile_info = &MISSILE_INFO[0];
@@ -287,6 +543,12 @@ void Missile_DirectHit(Object* obj, Object* target)
 
 void Missile_Explode(Object* obj)
 {
+	//already exploded
+	if (obj->flags & OBJ_FLAG__EXPLODING)
+	{
+		return;
+	}
+
 	const MissileInfo* missile_info = &MISSILE_INFO[0];
 
 	//cause damage if any 
@@ -294,6 +556,9 @@ void Missile_Explode(Object* obj)
 	{
 		Explosion(obj, 5, missile_info->explosion_damage);
 	}
+
+	//play sound
+	Sound_EmitWorldTemp(SOUND__FIREBALL_EXPLODE, obj->x, obj->y, 0, 0);
 
 	obj->flags |= OBJ_FLAG__EXPLODING;
 }
@@ -370,7 +635,84 @@ bool Trace_LineVsObject(float p_x, float p_y, float p_endX, float p_endY, Object
 
 void Gun_Shoot(Object* obj, float p_x, float p_y, float p_dirX, float p_dirY)
 {
+	Map* map = Map_GetMap();
 
+	Object* closest = NULL;
+	Object* old_closest = NULL;
+
+	float max_dist = FLT_MAX;
+
+	int center_x = (800 / 2) - 1;
+	int shoot_delta = 800 / 8;
+
+	
+	
+	while (true)
+	{
+		old_closest = closest;
+
+		for (int i = 0; i < map->num_sorted_objects; i++)
+		{
+			ObjectID id = map->sorted_list[i];
+			Object* object = &map->objects[id];
+
+			//behind the plane
+			if (object->view_y <= 0)
+			{
+				continue;
+			}
+
+			int sprite_screen_x = (int)((800 / 2) * (1 + object->view_x / object->view_y));
+
+
+			if (object->type == OT__MONSTER && object->hp > 0 && abs(sprite_screen_x - center_x) < shoot_delta)
+			{
+				float dist = (p_x - object->x) * (p_x - object->x) + (p_y - object->y) * (p_y - object->y);
+
+				if (dist < max_dist)
+				{
+					max_dist = dist;
+					closest = object;
+				}
+
+			}
+		}
+
+		if (closest == old_closest)
+		{
+			return;
+		}
+
+		if (Object_CheckLine(obj, closest))
+		{			
+			break;
+		}
+	}
+	
+
+	Object* ray_obj = closest;
+
+	if (ray_obj && ray_obj->type == OT__MONSTER)
+	{
+		int dmg = 4;
+		//modify damage based on distance
+		if (max_dist <= 5)
+		{
+			dmg *= 4;
+		}
+		else if (max_dist <= 10)
+		{
+			dmg *= 2;
+		}
+
+		//way too far away
+		if (max_dist >= 100)
+		{
+			return;
+		}
+
+		Object_Hurt(ray_obj, obj, dmg);
+	}
 }
 
 void Object_Hurt(Object* obj, Object* src_obj, int damage)
@@ -415,12 +757,18 @@ void Object_Hurt(Object* obj, Object* src_obj, int damage)
 	//set hurt state
 	if (obj->hp > 0)
 	{
-		Monster_SetState(obj, MS__HIT);
+		if (obj->type == OT__MONSTER)
+		{
+			Monster_SetState(obj, MS__HIT);
+		}
 		return;
 	}
 
 	//set die state
-	Monster_SetState(obj, MS__DIE);
+	if (obj->type == OT__MONSTER)
+	{
+		Monster_SetState(obj, MS__DIE);
+	}
 }
 
 bool Object_CheckLine(Object* obj, Object* target)
@@ -497,6 +845,29 @@ bool Object_CheckLine(Object* obj, Object* target)
 			return false;
 		}
 
+		//check for blocking objects
+		Object* tile_obj = Map_GetObjectAtTile(map_x, map_y);
+
+		if (!tile_obj)
+		{
+			continue;
+		}
+
+		//check for closed doors
+		if (tile_obj->type == OT__DOOR)
+		{
+			//door is more than halfway closed
+			if (tile_obj->move_timer >= 0.5)
+			{
+				return false;
+			}
+		}
+		//check for special tiles
+		else if (tile_obj->type == OT__SPECIAL_TILE)
+		{
+
+		}
+
 		//we have reached the target
 		if (map_x == target_tile_x && map_y == target_tile_y)
 		{
@@ -560,12 +931,14 @@ Object* Object_Missile(Object* obj, Object* target)
 
 	float dir_x = obj->dir_x;
 	float dir_y = obj->dir_y;
+	
+	float offset = (obj->type == OT__PLAYER) ? 0.5 : 0;
 
 	//if we have a target calc dir to target
 	if (target)
 	{
-		float point_x = obj->x - target->x;
-		float point_y = obj->y - target->y;
+		float point_x = (obj->x - offset) - target->x;
+		float point_y = (obj->y - offset) - target->y;
 
 		Math_XY_Normalize(&point_x, &point_y);
 
@@ -574,15 +947,298 @@ Object* Object_Missile(Object* obj, Object* target)
 	}
 
 	missile->sub_type = SUB__MISSILE_FIREBALL;
-	missile->type = OT__MISSILE;
-	missile->x = obj->x + dir_x * 2;
-	missile->y = obj->y + dir_y * 2;
+	missile->x = (obj->x - offset) + dir_x * 2;
+	missile->y = (obj->y - offset) + dir_y * 2;
 	missile->dir_x = dir_x;
 	missile->dir_y = dir_y;
 	missile->hp = 5;
-	missile->sprite.h_frames = 5;
-	missile->sprite.v_frames = 1;
+	//missile->sprite.h_frames = 5;
+	//missile->sprite.v_frames = 1;
 	missile->sprite.img = &assets->missile_textures;
 
+
 	return missile;
+}
+
+bool Object_HandleObjectCollision(Object* obj, Object* collision_obj)
+{
+	//return true if we can move
+
+	if (!collision_obj)
+	{
+		return true;
+	}
+
+	//ignore self
+	if (obj == collision_obj)
+	{
+		return true;
+	}
+
+	//some objects are ignored from collisions
+	if (collision_obj->type == OT__LIGHT || collision_obj->type == OT__TARGET || collision_obj->hp <= 0)
+	{
+		return true;
+	}
+	//handle doors
+	if (collision_obj->type == OT__DOOR)
+	{
+		obj->col_object = collision_obj;
+
+		//if door is moving in any way, don't move into it
+		if (collision_obj->state != DOOR_SLEEP)
+		{
+			return false;
+		}
+		//door is closed, no movement
+		if (collision_obj->move_timer >= 1)
+		{
+			return false;
+		}
+		//door is completely opened, move
+		else if (collision_obj->move_timer <= 0)
+		{
+			return true;
+		}
+	}
+	//handle special tiles
+	else if (collision_obj->type == OT__SPECIAL_TILE)
+	{
+		if (collision_obj->sub_type == SUB__SPECIAL_TILE_FAKE)
+		{
+			return true;
+		}
+
+		return false;
+	}
+	//handle pickups
+	else if (collision_obj->type == OT__PICKUP)
+	{
+		//pickup pickups for player
+		if (obj->type == OT__PLAYER)
+		{
+			Player_HandlePickup(collision_obj);
+		}
+
+		//pickups dont block movement
+		return true;
+	}
+	//handle triggers
+	else if (collision_obj->type == OT__TRIGGER)
+	{	
+		if(obj->type == OT__PLAYER)
+			Object_HandleTriggers(obj, collision_obj);
+
+		//triggers dont block movement
+		return true;
+	}
+	//we have collided with a missile
+	else if (collision_obj->type == OT__MISSILE)
+	{
+		//dont collide if we are the owner
+		if (collision_obj->owner == obj)
+		{
+			return true;
+		}
+		//dont collide if we are a missile
+		if (obj->type == OT__MISSILE)
+		{
+			return true;
+		}
+
+		//perform direct hit damage
+		Missile_DirectHit(collision_obj, obj);
+
+		//explode the missile
+		Missile_Explode(collision_obj);
+
+		//missiles dont block movement
+		return true;
+	}
+	//we are a missile
+	if (obj->type == OT__MISSILE)
+	{
+		//dont collide if hit the owner
+		if (obj->owner == collision_obj)
+		{
+			return true;
+		}
+		//dont collide if hit a missile
+		if (collision_obj->type == OT__MISSILE)
+		{
+			return true;
+		}
+
+		//if we have collided with player or a monster
+		//perform direct hit damage
+		Missile_DirectHit(obj, collision_obj);
+	}
+
+	//we can't move
+	return false;
+}
+
+void Object_HandleTriggers(Object* obj, Object* trigger)
+{
+	//not a trigger
+	if (trigger->type != OT__TRIGGER)
+	{
+		return;
+	}
+
+	//some do not have targets
+	if (trigger->sub_type == SUB__TRIGGER_CHANGELEVEL)
+	{
+		Game_ChangeLevel();
+		return;
+	}
+
+	Object* target = trigger->target;
+
+	//no target
+	if (!target)
+	{
+		return;
+	}
+
+	if (target->type == OT__TARGET)
+	{
+		switch (target->sub_type)
+		{
+		case SUB__TARGET_TELEPORT:
+		{
+			Move_Teleport(obj, target->x, target->y);
+			break;
+		}
+		default:
+			break;
+		}
+
+	}
+	else if (target->type == OT__DOOR)
+	{
+		// 0 == door open
+		// 1 == door closed
+
+		//door is open
+		if (target->move_timer == 0)
+		{
+			//close the door
+			//target->state = DOOR_CLOSE;
+		}
+		//door is closed
+		else if(target->move_timer == 1)
+		{
+			//open the door
+			target->state = DOOR_OPEN;
+		}
+
+		if (trigger->sub_type == SUB__TRIGGER_ONCE)
+		{
+			target->flags |= OBJ_FLAG__DOOR_NEVER_CLOSE;
+		}
+	}
+
+	//delete the object if it triggers once
+	if (trigger->sub_type == SUB__TRIGGER_ONCE)
+	{
+		Map_DeleteObject(trigger);
+	}
+
+}
+
+Object* Object_Spawn(ObjectType type, SubType sub_type, float x, float y)
+{
+	if (type == OT__NONE)
+	{
+		return NULL;
+	}
+
+	Object* obj = Map_NewObject(type);
+	
+	if (!obj)
+	{
+		return NULL;
+	}
+
+	obj->x = x;
+	obj->y = y;
+	
+	obj->sprite.x = x;
+	obj->sprite.y = y;
+
+	obj->sub_type = sub_type;
+
+	switch (type)
+	{
+	case OT__PLAYER:
+	{
+		break;
+	}
+	case OT__MONSTER:
+	{
+		obj->hp = 50;
+		obj->sprite.img = &assets.imp_texture;
+		obj->size = 1;
+
+		Monster_SetState(obj, MS__IDLE);
+		break;
+	}
+	case OT__THING:
+	{
+		obj->sprite.img = &assets.decoration_textures;
+
+		if (obj->sub_type == SUB__THING_TORCH) 
+		{
+			obj->sprite.frame = 2;
+		}
+		else if (obj->sub_type == SUB__THING_BARREL)
+		{
+			obj->sprite.frame = 1;
+		}
+
+		break;
+	}
+	case OT__PICKUP:
+	{
+		obj->sprite.img = &assets.pickup_textures;
+
+		if (obj->sub_type == SUB__PICKUP_SMALLHP)
+		{
+			obj->sprite.frame = 0;
+		}
+		else if (obj->sub_type == SUB__PICKUP_AMMO)
+		{
+			obj->sprite.frame = 2;
+		}
+		break;
+	}
+	case OT__TRIGGER:
+	{
+		break;
+	}
+	case OT__TARGET:
+	{
+		if (obj->sub_type == SUB__TARGET_TELEPORT)
+		{
+		}
+
+		break;
+	}
+	case OT__DOOR:
+	{
+		obj->move_timer = 1;
+		obj->state = DOOR_SLEEP;
+		break;
+	}
+	case OT__SPECIAL_TILE:
+	{
+		break;
+	}
+	default:
+		break;
+	}
+
+	
+	return obj;
 }

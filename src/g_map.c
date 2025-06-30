@@ -69,6 +69,35 @@ static void Map_UpdateObjectTilemap()
 		obj->tile_index = index;
 	}
 }
+static void Map_ConnectTriggersToTargets()
+{
+	for (int i = 0; i < s_map.num_objects; i++)
+	{
+		Object* obj = &s_map.objects[i];
+
+		if (obj->type != OT__TRIGGER)
+		{
+			continue;
+		}
+
+		int target_id = (int)obj->target;
+		obj->target = NULL;
+
+		for (int k = 0; k < s_map.num_objects; k++)
+		{
+			Object* target_obj = &s_map.objects[k];
+
+			if (target_obj->type == OT__TARGET || target_obj->type == OT__DOOR)
+			{
+				if (target_obj->map_id == target_id)
+				{
+					obj->target = target_obj;
+					break;
+				}
+			}
+		}
+	}
+}
 
 static void Map_FreeListStoreID(ObjectID id)
 {
@@ -118,6 +147,8 @@ Object* Map_NewObject(ObjectType type)
 	obj->id = index;
 	obj->tile_index = NULL_INDEX;
 	obj->type = type;
+	obj->hp = 1;
+	obj->size = 0.5;
 
 	s_map.num_objects++;
 
@@ -128,7 +159,7 @@ Object* Map_NewObject(ObjectType type)
 
 bool Map_Load(const char* filename)
 {
-	memset(&s_map, 0, sizeof(s_map));
+	Map_Destruct();
 
 	GameAssets* assets = Game_GetAssets();
 
@@ -149,6 +180,10 @@ bool Map_Load(const char* filename)
 		printf("ERROR::Failed to load map!\n");
 		return false;
 	}
+
+	//we can free the raw char data
+	free(filestr);
+	filestr = NULL;
 
 	cJSON* layers = cJSON_GetObjectItem(json, "layers");
 
@@ -273,92 +308,144 @@ bool Map_Load(const char* filename)
 					goto cleanup;
 				}
 
+				cJSON* id = cJSON_GetObjectItem(object, "id");
+
+				int map_id = -1;
+
+				if (id && cJSON_IsNumber(id))
+				{
+					map_id = cJSON_GetNumberValue(id);
+				}
+
+				float obj_x = cJSON_GetNumberValue(x_coord) / TILE_SIZE;
+				float obj_y = cJSON_GetNumberValue(y_coord) / TILE_SIZE;
+
 				char* type_value = cJSON_GetStringValue(type);
+
 
 				if (!strcmp(type_value, "spawnpoint"))
 				{
-					s_map.player_spawn_point_x = cJSON_GetNumberValue(x_coord) / 64;
-					s_map.player_spawn_point_y = cJSON_GetNumberValue(y_coord) / 64;
+					s_map.player_spawn_point_x = obj_x;
+					s_map.player_spawn_point_y = obj_y;
 					continue;
 				}
 
-				Object* map_object = Map_NewObject(OT__NONE);
-
-				map_object->x = cJSON_GetNumberValue(x_coord) / 64;
-				map_object->y = cJSON_GetNumberValue(y_coord) / 64;
-
-				map_object->sprite.x = map_object->x;
-				map_object->sprite.y = map_object->y;
+				Object* map_object = NULL;
 
 				if (!strcmp(type_value, "light"))
 				{
-					map_object->type = OT__LIGHT;
-
-					map_object->hp = 1;
-					map_object->sprite.frame = 0;
 				}
 				else if (!strcmp(type_value, "barrel"))
 				{
-					map_object->type = OT__THING;
-
-					map_object->hp = 1;
-					map_object->sprite.frame = 1;
+					map_object = Object_Spawn(OT__THING, SUB__THING_BARREL, obj_x, obj_y);
 				}
 				else if (!strcmp(type_value, "torch"))
 				{
-					map_object->type = OT__THING;
-
-					map_object->hp = 1;
-					map_object->sprite.frame = 2;
-				}
-				else if (!strcmp(type_value, "tree"))
-				{
-					map_object->type = OT__THING;
-
-					map_object->hp = 1;
-					map_object->sprite.frame = 3;
+					map_object = Object_Spawn(OT__THING, SUB__THING_TORCH, obj_x, obj_y);
 				}
 				else if (!strcmp(type_value, "monster"))
 				{
-					map_object->type = OT__MONSTER;
-					map_object->sub_type = SUB__MOB_IMP;
-					map_object->hp = 50;
-					map_object->sprite.img = &assets->imp_texture;
-					map_object->sprite.h_frames = 9;
-					map_object->sprite.v_frames = 9;
-					Sprite_GenerateAlphaSpans(&map_object->sprite);
-
-					Monster_SetState(map_object, 0);
+					map_object = Object_Spawn(OT__MONSTER, SUB__MOB_IMP, obj_x, obj_y);
 				}
 				else if (!strcmp(type_value, "pickup_smallhp"))
 				{
-					map_object->type = SUB__PICKUP_SMALLHP;
-					map_object->type = OT__PICKUP;
-					map_object->hp = 5;
-					map_object->sprite.h_frames = 2;
-					map_object->sprite.v_frames = 1;
-					map_object->sprite.img = &assets->pickup_textures;
-					map_object->sprite.frame = 0;
-
+					map_object = Object_Spawn(OT__PICKUP, SUB__PICKUP_SMALLHP, obj_x, obj_y);
 				}
-				if (map_object->type == OT__LIGHT || map_object->type == OT__THING)
+				else if (!strcmp(type_value, "pickup_ammo"))
 				{
-					map_object->sprite.img = &assets->decoration_textures;
-					map_object->sprite.h_frames = 4;
-					map_object->sprite.v_frames = 1;
+					map_object = Object_Spawn(OT__PICKUP, SUB__PICKUP_AMMO, obj_x, obj_y);
+				}
+				else if(!strcmp(type_value, "trigger") || !strcmp(type_value, "trigger_once"))
+				{
+					if (!strcmp(type_value, "trigger_once"))
+					{
+						map_object = Object_Spawn(OT__TRIGGER, SUB__TRIGGER_ONCE, obj_x, obj_y);
+					}
+					else
+					{
+						map_object = Object_Spawn(OT__TRIGGER, SUB__NONE, obj_x, obj_y);
+					}
+
+					if (map_object)
+					{
+						//map_object->y -= 1;
+
+						cJSON* props = cJSON_GetObjectItem(object, "properties");
+
+						if (props && cJSON_IsArray(props))
+						{
+							cJSON* prop = NULL;
+							cJSON_ArrayForEach(prop, props)
+							{
+								cJSON* prop_name = cJSON_GetObjectItem(prop, "name");
+
+								if (prop_name && cJSON_IsString(prop_name) && !strcmp(cJSON_GetStringValue(prop_name), "target"))
+								{
+									cJSON* prop_value = cJSON_GetObjectItem(prop, "value");
+
+									if (prop_value && cJSON_IsNumber(prop_value))
+									{
+										//hacky way to store int, but works for now
+										map_object->target = (unsigned)cJSON_GetNumberValue(prop_value);
+										break;
+									}
+								}
+							}
+						}
+					}
+					
+				}
+				else if (!strcmp(type_value, "trigger_changelevel"))
+				{
+					map_object = Object_Spawn(OT__TRIGGER, SUB__TRIGGER_CHANGELEVEL, obj_x, obj_y);
+				}
+				else if (!strcmp(type_value, "target_teleport"))
+				{
+					map_object = Object_Spawn(OT__TARGET, SUB__TARGET_TELEPORT, obj_x, obj_y);
+				}
+				else if (!strcmp(type_value, "door_v"))
+				{
+					map_object = Object_Spawn(OT__DOOR, SUB__DOOR_VERTICAL, obj_x, obj_y);
+
+					if (map_object)
+					{
+						map_object->y -= 1;
+					}
+				}
+				else if (!strcmp(type_value, "tile_fake"))
+				{
+					map_object = Object_Spawn(OT__SPECIAL_TILE, SUB__SPECIAL_TILE_FAKE, obj_x, obj_y);
+
+					if (map_object)
+					{
+						map_object->y -= 1;
+
+						cJSON* gid = cJSON_GetObjectItem(object, "gid");
+
+						if (gid && cJSON_IsNumber(gid))
+						{
+							map_object->state = cJSON_GetNumberValue(gid);
+						}
+
+					}
+				}
+
+				if (map_object)
+				{
+					map_object->map_id = map_id;
 				}
 			}
 		
 		}
 	}
 
+	Map_ConnectTriggersToTargets();
 	Map_UpdateObjectTilemap();
 	Map_UpdateSortedList();
 
 	cleanup:
 	//cleanup
 	cJSON_Delete(json);
-	free(filestr);
 	
 	return result;
 }
@@ -467,8 +554,21 @@ Object* Map_Raycast(float p_x, float p_y, float dir_x, float dir_y)
 
 		Object* obj = Map_GetObjectAtTile(map_x, map_y);
 
-		//alive object found?
-		if (obj && obj->hp > 0)
+		if (!obj)
+		{
+			continue;
+		}
+
+		//check for doors
+		if (obj->type == OT__DOOR)
+		{
+			//door is more than halfway closed
+			if (obj->move_timer >= 0.5)
+			{
+				return NULL;
+			}
+		}
+		else if (obj->type == OT__MONSTER)
 		{
 			if (Trace_LineVsObject(p_x, p_y, dir_x * 1000, dir_y * 1000, obj))
 			{
@@ -506,17 +606,24 @@ void Map_GetSpawnPoint(int* r_x, int* r_y)
 	}
 }
 
-void Map_UpdateObjectTile(Object* obj)
+bool Map_UpdateObjectTile(Object* obj)
 {
-	if (obj->x < 0 || obj->y < 0 || obj->x >= s_map.width || obj->y >= s_map.height)
+	if (obj->x < 0 || obj->y < 0)
 	{
-		return;
+		return false;
 	}
+
+	int total_tiles = Map_GetTotalTiles();
 
 	int tile_x = (int)obj->x;
 	int tile_y = (int)obj->y;
 
-	size_t index = tile_x + tile_y * s_map.width;
+	int index = tile_x + tile_y * s_map.width;
+
+	if (index >= total_tiles || index < 0)
+	{
+		return false;
+	}
 
 	ObjectID id = s_map.object_tiles[index];
 
@@ -524,16 +631,25 @@ void Map_UpdateObjectTile(Object* obj)
 	{
 		Object* tile_obj = &s_map.objects[id];
 
-		//if we are a missile don't take take anyone's place
-		if (obj->type == OT__MISSILE)
+		if (tile_obj != obj)
 		{
-			return;
-		}
+			//if we are a missile don't take take anyone's place
+			if (obj->type == OT__MISSILE)
+			{
+				return true;
+			}
 
-		//if there is overlap with light or a static object, stop
-		if (tile_obj->type == OT__LIGHT || tile_obj->type == OT__THING)
-		{
-			return;
+			if (tile_obj->type == OT__PLAYER || tile_obj == OT__MONSTER || tile_obj->type == OT__THING)
+			{
+				return false;
+			}
+
+			//return true, but don't take the spot
+			if (tile_obj->type == OT__DOOR || tile_obj->type == OT__TRIGGER || tile_obj->type == OT__SPECIAL_TILE || tile_obj->type == OT__PICKUP)
+			{
+				return true;
+			}
+			
 		}
 	}
 
@@ -545,6 +661,8 @@ void Map_UpdateObjectTile(Object* obj)
 	
 	obj->tile_index = index;
 	s_map.object_tiles[index] = obj->id;
+
+	return true;
 }
 
 int Map_GetTotalTiles()
@@ -608,7 +726,7 @@ void Map_DrawObjects(Image* image, float* depth_buffer, float p_x, float p_y, fl
 		ObjectID id = s_map.sorted_list[i];
 		Object* object = &s_map.objects[id];
 
-		if (object->type == OT__NONE || !object->sprite.img)
+		if (object->type == OT__NONE || !object->sprite.img || object->sprite.skip_draw == true)
 		{
 			continue;
 		}
@@ -644,18 +762,32 @@ void Map_UpdateObjects(float delta)
 		ObjectID id = s_map.sorted_list[i];
 		Object* obj = &s_map.objects[id];
 
+		obj->sprite.skip_draw = false;
+
 		if (obj->type == OT__NONE)
 		{
 			continue;
 		}
 
-		if (obj->type == OT__MONSTER)
+		switch (obj->type)
+		{
+		case OT__MONSTER:
 		{
 			Monster_Update(obj, delta);
+			break;
 		}
-		else if (obj->type == OT__MISSILE)
+		case OT__MISSILE:
 		{
 			Missile_Update(obj, delta);
+			break;
+		}
+		case OT__DOOR:
+		{
+			Move_Door(obj, delta);
+			break;
+		}
+		default:
+			break;
 		}
 
 		bool sprite_position_changed = false;
@@ -665,20 +797,31 @@ void Map_UpdateObjects(float delta)
 			sprite_position_changed = true;
 		}
 
-		obj->sprite.x = obj->x;
-		obj->sprite.y = obj->y;
+		obj->sprite.x = obj->x + 0.5;
+		obj->sprite.y = obj->y + 0.5;
+
 
 		//translate sprite position to relative to camera
 		float local_sprite_x = obj->sprite.x - view_x;
 		float local_sprite_y = obj->sprite.y - view_y;
 
+		float transform_x = inv_det * (dir_y * local_sprite_x - dir_x * local_sprite_y);
 		float transform_y = inv_det * (-plane_y * local_sprite_x + plane_x * local_sprite_y);
 
+		obj->view_x = transform_x;
+		obj->view_y = transform_y;
+
 		//if the sprite is in view and its position changed, request sprite redraw
-		if (transform_y > 0 && sprite_position_changed) 
+		if (transform_y > 0) 
 		{
-			Render_RedrawSprites();
+			if(sprite_position_changed)
+				Render_RedrawSprites();
 		}
+		else
+		{
+			obj->sprite.skip_draw = true;
+		}
+		
 	}
 }
 
@@ -708,8 +851,8 @@ void Map_DeleteObject(Object* obj)
 
 void Map_Destruct()
 {
-	free(s_map.tiles);
-	free(s_map.object_tiles);
+	if(s_map.tiles) free(s_map.tiles);
+	if(s_map.object_tiles) free(s_map.object_tiles);
 	
 	memset(&s_map, 0, sizeof(s_map));
 }

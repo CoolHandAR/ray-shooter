@@ -22,6 +22,7 @@
 #include "r_common.h"
 #include "utility.h"
 #include "main.h"
+#include "sound.h"
 
 #define WINDOW_WIDTH 800
 #define WINDOW_HEIGHT 800
@@ -86,6 +87,12 @@ float Engine_GetDeltaTime()
 int main()
 {
 	memset(&s_engine, 0, sizeof(EngineData));
+
+	if (!Sound_Init())
+	{
+		printf("ERROR::Failed to init sound!\n");
+		return -1;
+	}
 
 	if (!Game_LoadAssets())
 	{
@@ -263,7 +270,7 @@ int main()
 	unsigned id = glGetUniformLocation(shader_id, "u_proj");
 	glUniformMatrix4fv(id, 1, GL_FALSE, proj);
 
-//	glfwSwapInterval(0);
+	
 
 	//MAIN LOOP
 	while (!glfwWindowShouldClose(window))
@@ -289,6 +296,7 @@ int main()
 	Game_DestructAssets();
 
 	Render_ShutDown();
+	Sound_Shutdown();
 
 	glfwDestroyWindow(window);
 	glfwTerminate();

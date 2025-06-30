@@ -176,7 +176,10 @@ void Sprite_UpdateAnimation(Sprite* sprite, float delta)
 
 void Sprite_GenerateAlphaSpans(Sprite* sprite)
 {
-	int total_frames = sprite->h_frames * sprite->v_frames;
+	const int h_frames = sprite->img->h_frames;
+	const int v_frames = sprite->img->v_frames;
+
+	int total_frames = h_frames * v_frames;
 
 	//only single frame
 	if (total_frames == 0)
@@ -191,7 +194,7 @@ void Sprite_GenerateAlphaSpans(Sprite* sprite)
 		return;
 	}
 
-	int w = (sprite->h_frames > 0) ? sprite->img->width / sprite->h_frames : sprite->img->width;
+	int w = (h_frames > 0) ? sprite->img->width / h_frames : sprite->img->width;
 
 	for (int i = 0; i < total_frames; i++)
 	{
@@ -209,11 +212,11 @@ void Sprite_GenerateAlphaSpans(Sprite* sprite)
 		int min_x = 0;
 		int max_x = 0;
 
-		int sprite_offset_x = (sprite->h_frames > 0) ? i % sprite->h_frames : 0;
-		int sprite_offset_y = (sprite->v_frames > 0) ? i / sprite->h_frames : 0;
+		int sprite_offset_x = (h_frames > 0) ? i % h_frames : 0;
+		int sprite_offset_y = (v_frames > 0) ? i / h_frames : 0;
 
-		int sprite_rect_width = (sprite->h_frames > 0) ? sprite->img->width / sprite->h_frames : sprite->img->width;
-		int sprite_rect_height = (sprite->v_frames > 0) ? sprite->img->height / sprite->v_frames : sprite->img->height;
+		int sprite_rect_width = (h_frames > 0) ? sprite->img->width / h_frames : sprite->img->width;
+		int sprite_rect_height = (v_frames > 0) ? sprite->img->height / v_frames : sprite->img->height;
 
 		for (int x = 0; x < sprite_rect_width; x++)
 		{
@@ -278,7 +281,10 @@ void Sprite_GenerateAlphaSpans(Sprite* sprite)
 
 FrameInfo* Sprite_GetFrameInfo(Sprite* sprite, int frame)
 {
-	int total_frames = sprite->h_frames * sprite->v_frames;
+	const int h_frames = sprite->img->h_frames;
+	const int v_frames = sprite->img->v_frames;
+
+	int total_frames = h_frames * v_frames;
 
 	if (total_frames == 0) total_frames = 1;
 
@@ -287,11 +293,14 @@ FrameInfo* Sprite_GetFrameInfo(Sprite* sprite, int frame)
 
 AlphaSpan* Sprite_GetFrameAlphaSpan(Sprite* sprite, int x, int frame)
 {
-	int total_frames = sprite->h_frames * sprite->v_frames;
+	const int h_frames = sprite->img->h_frames;
+	const int v_frames = sprite->img->v_frames;
+
+	int total_frames = h_frames * v_frames;
 
 	if (total_frames == 0) total_frames = 1;
 	
-	int w = (sprite->h_frames > 0) ? sprite->img->width / sprite->h_frames : sprite->img->width;
+	int w = (h_frames > 0) ? sprite->img->width / h_frames : sprite->img->width;
 
 	if (x < 0 || frame < 0 || x >= w || frame >= total_frames)
 	{

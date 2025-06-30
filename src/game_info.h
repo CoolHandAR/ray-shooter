@@ -2,7 +2,8 @@
 
 //Lazy hardcoded game data
 
-extern void Monster_Imp_FireBall(Object* obj);
+
+extern void Monster_Imp_FireBall(struct Object* obj);
 
 typedef enum
 {
@@ -48,7 +49,7 @@ typedef enum
 } MonsterAnimState;
 
 
-typedef void (*MonsterActionFun)(Object* obj);
+typedef void (*MonsterActionFun)(struct Object* obj);
 
 typedef struct
 {
@@ -149,9 +150,70 @@ static const MissileInfo MISSILE_INFO[] =
 			//EXPLODE
 			NULL, 0, 2, 0, 3, 0,
 		},
-		4, //SPEED
+		8, //SPEED
 		1, //SIZE,
 		0, //EXPLOSION DAMAGE
 		5, //DIRECT HIT DAMAGE
 	}
 };
+
+typedef enum
+{
+	SOUND__NONE,
+
+	SOUND__FIREBALL_THROW,
+	SOUND__FIREBALL_EXPLODE,
+	
+	SOUND__IMP_ALERT,
+	SOUND__IMP_HIT,
+	SOUND__IMP_DIE,
+
+	SOUND__SHOTGUN_SHOOT,
+
+	SOUND__DOOR_ACTION,
+
+	SOUND__MAX
+} SoundType;
+
+static const char* SOUND_INFO[SOUND__MAX] =
+{
+	//NONE
+	NULL,
+
+	//FIREBALL THROW
+	"assets/fireball_throw.wav",
+
+	//FIREBALL EXPLODE
+	"assets/fireball_explode.wav",
+
+	//IMP ALERT
+	"assets/imp_alert.wav",
+
+	//IMP HIT
+	"assets/imp_hit.wav",
+
+	//IMP DIE
+	"assets/imp_die.wav",
+
+	//SHOTGUN SHOOT
+	"assets/shotgun_shoot.wav",
+
+	//DOOR ACTION
+	"assets/door_action.wav",
+};
+
+typedef enum
+{
+	GUN__NONE,
+
+	GUN__SHOTGUN,
+
+	GUN__MAX
+} GunType;
+
+typedef struct
+{
+	int damage;
+	int spread;
+	float cooldown;
+} GunInfo;

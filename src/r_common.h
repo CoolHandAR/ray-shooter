@@ -4,6 +4,7 @@
 #include <string.h>
 
 #define MAX_IMAGE_MIPMAPS 8
+#define DEPTH_CLEAR 9999999
 
 typedef struct
 {
@@ -11,6 +12,9 @@ typedef struct
 	int width;
 	int height;
 	unsigned char* data;
+
+	int h_frames;
+	int v_frames;
 } Image;
 
 bool Image_Create(Image* img, int p_width, int p_height, int p_numChannels);
@@ -71,6 +75,8 @@ typedef struct
 	float dist;
 	bool flip_h, flip_v;
 
+	bool skip_draw;
+
 	//modifiers
 	float transparency;
 
@@ -84,9 +90,6 @@ typedef struct
 
 	int loops;
 	int action_loop;
-
-	int h_frames;
-	int v_frames;
 
 	int frame_offset_x;
 	int frame_offset_y;
@@ -106,9 +109,11 @@ void Video_DrawLine(Image* image, int x0, int y0, int x1, int y1, unsigned char*
 void Video_DrawRectangle(Image* image, int p_x, int p_y, int p_w, int p_h, unsigned char* p_color);
 void Video_Clear(Image* image, unsigned char c);
 void Video_RaycastMap(Image* image, Image* texture, float* depth_buffer, float p_x, float p_y, float p_dirX, float p_dirY, float p_planeX, float p_planeY);
+bool Video_DrawCollumn(Image* image, Image* texture, int x, float size, float view_x, float view_y, float ray_dir_x, float ray_dir_y, float* depth_buffer, float wall_dist, int side, int tile);
 void Video_DrawSprite(Image* image, Sprite* sprite, float* depth_buffer, float p_x, float p_y, float p_dirX, float p_dirY, float p_planeX, float p_planeY);
 void Video_DrawScreenTexture(Image* image, Image* texture, float p_x, float p_y, float p_scaleX, float p_scaleY);
 void Video_DrawScreenSprite(Image* image, Sprite* sprite, float p_x, float p_y);
+
 
 typedef void (*ShaderFun)(Image* image, int x, int y, int tx, int ty);
 void Video_Shade(Image* image, ShaderFun shader_fun, int x0, int y0, int x1, int y1);

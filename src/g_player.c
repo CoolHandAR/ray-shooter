@@ -4,20 +4,32 @@
 #include <math.h>
 #include <cglm/cglm.h>
 
+#include "sound.h"
+#include "game_info.h"
 #include "main.h"
+#include "u_math.h"
 
 #define PLAYER_SPEED 10
 
 typedef struct
 {
+	int ammo;
+} GunData;
+
+typedef struct
+{
 	Sprite gun_sprite;
 	Object* obj;
-	float dir_x, dir_y;
 	float plane_x, plane_y;
 	int move_x;
 	int move_y;
 	int slow_move;
 	float gun_timer;
+	int gun_sound_id;
+
+	int ammo;
+
+	GunData guns[GUN__MAX];
 } PlayerData;
 
 static PlayerData player;
@@ -28,34 +40,42 @@ static void Player_ShootGun()
 	{
 		return;
 	}
+	if (player.ammo <= 0)
+	{
+		return;
+	}
 
 	float spread = 3;
 	for (int i = 0; i < 8; i++)
 	{
-		float randomf = (rand() & 0x7fff) / (float)0x7fff;
+		float randomf = Math_randf();
+
+		randomf = Math_Clamp(randomf, 0.0, 0.25);
 
 		if (rand() % 100 > 50)
 		{
 			randomf = -randomf;
 		}
-		
-		Object* hit = Map_Raycast(player.obj->x, player.obj->y, player.dir_x + randomf, player.dir_y + randomf);
 
-		if (hit && hit->type == OT__MONSTER)
-		{
-			Object_Hurt(hit, player.obj, 5);
-		}
+		
+		Gun_Shoot(player.obj, player.obj->x - 0.5, player.obj->y - 0.5, player.obj->dir_x + randomf, player.obj->dir_y + randomf);
 	}
 
-	//Object_Missile(player.obj, NULL);
-
-	
-
+	player.ammo--;
 
 	player.gun_sprite.playing = true;
 	player.gun_sprite.frame = 1;
 	player.gun_timer = 1.35;
 
+	//Sound_EmitWorldTemp(SOUND__SHOTGUN_SHOOT, player.obj->x - 0.5, player.obj->y - 0.5, player.dir_x, player.dir_y);
+
+	//Object* m = Object_Missile(player.obj, NULL);
+//
+	//m->owner = player.obj;
+
+
+	Sound_Play(player.gun_sound_id);
+	
 }
 
 static void Player_ProcessInput(GLFWwindow* window)
@@ -109,16 +129,14 @@ void Player_Init()
 	player.obj->y = spawn_y;
 	player.plane_x = 0;
 	player.plane_y = 0.66;
-	player.dir_x = -1;
-	player.dir_y = 0;
+	player.obj->dir_x = -1;
+	player.obj->dir_y = 0;
 
 	GameAssets* assets = Game_GetAssets();
 
 	player.gun_sprite.img = &assets->weapon_textures;
 	player.gun_sprite.scale_x = 3;
 	player.gun_sprite.scale_y = 3;
-	player.gun_sprite.h_frames = 10;
-	player.gun_sprite.v_frames = 1;
 	player.gun_sprite.anim_speed_scale = 0.7;
 	player.gun_sprite.frame = 0;
 	player.gun_sprite.flip_h = false;
@@ -129,6 +147,12 @@ void Player_Init()
 	player.obj->hp = 5;
 
 	Sprite_GenerateAlphaSpans(&player.gun_sprite);
+
+	player.gun_sound_id = Sound_Preload(SOUND__SHOTGUN_SHOOT);
+
+	Sound_setMasterVolume(0.2);
+
+	player.ammo = 14;
 }
 
 Object* Player_GetObj()
@@ -142,7 +166,12 @@ void Player_HandlePickup(Object* obj)
 	{
 	case SUB__PICKUP_SMALLHP:
 	{
-		obj->hp += 5;
+		player.obj->hp += 5;
+		break;
+	}
+	case SUB__PICKUP_AMMO:
+	{
+		player.ammo += 10;
 		break;
 	}
 	default:
@@ -163,8 +192,10 @@ void Player_Update(GLFWwindow* window, float delta)
 
 	if (player.slow_move == 1) speed *= 0.5;
 
-	Move_Object(player.obj, (player.move_x * player.dir_x) * speed, (player.move_x * player.dir_y) * speed);
-	Move_Object(player.obj, (player.move_y * player.plane_x) * speed, (player.move_y * player.plane_y) * speed);
+	float dir_x = (player.move_x * player.obj->dir_x) + (player.move_y * player.plane_x);
+	float dir_y = (player.move_x * player.obj->dir_y) + (player.move_y * player.plane_y);
+
+	Move_Object(player.obj, dir_x * speed, dir_y * speed);
 
 	Sprite_UpdateAnimation(&player.gun_sprite, delta);
 
@@ -173,18 +204,22 @@ void Player_Update(GLFWwindow* window, float delta)
 		player.gun_sprite.frame = 0;
 	}
 
-	player.obj->dir_x = player.dir_x;
-	player.obj->dir_y = player.dir_y;
 
 	player.gun_timer -= delta;
+
+	ma_engine* sound_engine = Sound_GetEngine();
+
+	ma_engine_listener_set_position(sound_engine, 0, player.obj->x, 0, player.obj->y);
+	ma_engine_listener_set_direction(sound_engine, 0, -player.obj->dir_x, 0, -player.obj->dir_y);
+	Sound_Set(player.gun_sound_id, player.obj->x, player.obj->y, player.obj->dir_x, player.obj->dir_y);
 }
 
 void Player_GetView(float* r_x, float* r_y, float* r_dirX, float* r_dirY, float* r_planeX, float* r_planeY)
 {
-	if(r_x) *r_x = player.obj->x - 0.5;
-	if(r_y) *r_y = player.obj->y - 0.5;
-	if(r_dirX) *r_dirX = player.dir_x;
-	if(r_dirY) *r_dirY = player.dir_y;
+	if(r_x) *r_x = player.obj->x;
+	if(r_y) *r_y = player.obj->y;
+	if(r_dirX) *r_dirX = player.obj->dir_x;
+	if(r_dirY) *r_dirY = player.obj->dir_y;
 	if(r_planeX) *r_planeX = player.plane_x;
 	if(r_planeY) *r_planeY = player.plane_y;
 }
@@ -211,9 +246,9 @@ void Player_MouseCallback(float x, float y)
 
 	float rotSpeed = xOffset * (1.0 / 1000);
 
-	double oldDirX = player.dir_x;
-	player.dir_x = player.dir_x * cos(-rotSpeed) - player.dir_y * sin(-rotSpeed);
-	player.dir_y = oldDirX * sin(-rotSpeed) + player.dir_y * cos(-rotSpeed);
+	double oldDirX = player.obj->dir_x;
+	player.obj->dir_x = player.obj->dir_x * cos(-rotSpeed) - player.obj->dir_y * sin(-rotSpeed);
+	player.obj->dir_y = oldDirX * sin(-rotSpeed) + player.obj->dir_y * cos(-rotSpeed);
 	double oldPlaneX = player.plane_x;
 	player.plane_x = player.plane_x * cos(-rotSpeed) - player.plane_y * sin(-rotSpeed);
 	player.plane_y = oldPlaneX * sin(-rotSpeed) + player.plane_y * cos(-rotSpeed);
@@ -223,4 +258,13 @@ void Player_Draw(Image* image)
 {
 	//draw gun
 	Video_DrawScreenSprite(image, &player.gun_sprite, 280, 500);
+
+	//draw crosshair
+	int x0 = (image->width / 2) - 5;
+	int y0 = (image->height / 2) -5 ;
+	int x1 = x0 + 15;
+	int y1 = y0 + 15;
+
+	unsigned char color[4] = { 255, 255, 255, 255 };
+	Video_DrawLine(image, x0, y0, x1, y1, color);
 }
