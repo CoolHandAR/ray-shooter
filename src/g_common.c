@@ -41,6 +41,14 @@ bool Game_LoadAssets()
 	{
 		return false;
 	}
+	if (!Image_CreateFromPath(&assets.pinky_texture, "assets/pinky_sheet.png"))
+	{
+		return false;
+	}
+	if (!Image_CreateFromPath(&assets.sky_texture, "assets/sky.png"))
+	{
+		return false;
+	}
 
 	assets.wall_textures.h_frames = 5;
 	assets.wall_textures.v_frames = 1;
@@ -63,6 +71,20 @@ bool Game_LoadAssets()
 	assets.minigun_texture.h_frames = 3;
 	assets.minigun_texture.v_frames = 1;
 
+	assets.pinky_texture.h_frames = 8;
+	assets.pinky_texture.v_frames = 6;
+
+	Image_GenerateFrameInfo(&assets.wall_textures);
+	Image_GenerateFrameInfo(&assets.decoration_textures);
+	Image_GenerateFrameInfo(&assets.weapon_textures);
+	Image_GenerateFrameInfo(&assets.pickup_textures);
+	Image_GenerateFrameInfo(&assets.imp_texture);
+	Image_GenerateFrameInfo(&assets.missile_textures);
+	Image_GenerateFrameInfo(&assets.minigun_texture);
+	Image_GenerateFrameInfo(&assets.pinky_texture);
+
+	Image_GenerateMipmaps(&assets.wall_textures);
+
 	return true;
 }
 
@@ -75,6 +97,7 @@ void Game_DestructAssets()
 	Image_Destruct(&assets.pickup_textures);
 	Image_Destruct(&assets.missile_textures);
 	Image_Destruct(&assets.minigun_texture);
+	Image_Destruct(&assets.pinky_texture);
 }
 
 GameAssets* Game_GetAssets()
@@ -84,7 +107,35 @@ GameAssets* Game_GetAssets()
 
 void Game_ChangeLevel()
 {
-	Map_Load("test2.json");
+	Map* map = Map_GetMap();
+
+	map->level_index++;
+
+	if (map->level_index > 1)
+	{
+		map->level_index = 1;
+	}
+
+	const char* level = LEVELS[map->level_index];
+
+	Map_Load(level);
+
+	
+	Player_Init();
+}
+
+void Game_Reset(bool to_start)
+{
+	int index = 0;
+
+	if (!to_start)
+	{
+		index = Map_GetLevelIndex();
+	}
+
+	const char* level = LEVELS[index];
+
+	Map_Load(level);
 
 	Player_Init();
 }
@@ -501,7 +552,7 @@ void Missile_Update(Object* obj, float delta)
 
 	float speed = missile_info->speed * delta;
 
-	if (Move_CheckStep(obj, obj->dir_x * speed, obj->dir_y * speed, 1))
+	if (Move_CheckStep(obj, obj->dir_x * speed, obj->dir_y * speed, 0.25))
 	{
 		float old_x = obj->x;
 		float old_y = obj->y;
@@ -635,6 +686,13 @@ bool Trace_LineVsObject(float p_x, float p_y, float p_endX, float p_endY, Object
 
 void Gun_Shoot(Object* obj, float p_x, float p_y, float p_dirX, float p_dirY)
 {
+	int render_w;
+	Render_GetWindowSize(&render_w, NULL);
+
+	int half_w = render_w / 2;
+	int center_x = (half_w) - 1;
+	int shoot_delta = render_w / 8;
+
 	Map* map = Map_GetMap();
 
 	Object* closest = NULL;
@@ -642,11 +700,6 @@ void Gun_Shoot(Object* obj, float p_x, float p_y, float p_dirX, float p_dirY)
 
 	float max_dist = FLT_MAX;
 
-	int center_x = (800 / 2) - 1;
-	int shoot_delta = 800 / 8;
-
-	
-	
 	while (true)
 	{
 		old_closest = closest;
@@ -662,10 +715,9 @@ void Gun_Shoot(Object* obj, float p_x, float p_y, float p_dirX, float p_dirY)
 				continue;
 			}
 
-			int sprite_screen_x = (int)((800 / 2) * (1 + object->view_x / object->view_y));
+			int screen_x = (int)((half_w) * (1 + object->view_x / object->view_y));
 
-
-			if (object->type == OT__MONSTER && object->hp > 0 && abs(sprite_screen_x - center_x) < shoot_delta)
+			if (object->type == OT__MONSTER && object->hp > 0 && abs(screen_x - center_x) < shoot_delta)
 			{
 				float dist = (p_x - object->x) * (p_x - object->x) + (p_y - object->y) * (p_y - object->y);
 
@@ -719,6 +771,11 @@ void Object_Hurt(Object* obj, Object* src_obj, int damage)
 {
 	if (obj->type != OT__MONSTER)
 	{
+		//return;
+	}
+
+	if (!src_obj)
+	{
 		return;
 	}
 
@@ -738,14 +795,17 @@ void Object_Hurt(Object* obj, Object* src_obj, int damage)
 		//if hurt by a player or monster, set as target
 		if (src_obj->type == OT__PLAYER || src_obj->type == OT__MONSTER)
 		{
-			obj->target = src_obj;
+			if (src_obj->sub_type != obj->sub_type)
+			{
+				obj->target = src_obj;
+			}
 		}
 		//if hurt by a missile target the missiles owner
 		else if (src_obj->type == OT__MISSILE)
 		{
 			Object* owner = src_obj->owner;
 
-			if (owner && (owner->type == OT__PLAYER || owner->type == OT__MONSTER))
+			if (owner && (owner->type == OT__PLAYER || owner->type == OT__MONSTER) && owner->sub_type != obj->sub_type)
 			{
 				obj->target = owner;
 			}
@@ -761,6 +821,13 @@ void Object_Hurt(Object* obj, Object* src_obj, int damage)
 		{
 			Monster_SetState(obj, MS__HIT);
 		}
+		else if (obj->type == OT__PLAYER)
+		{
+			float dir_x = obj->x - src_obj->x;
+			float dir_y = obj->y - src_obj->y;
+
+			Player_Hurt(dir_x, dir_y);
+		}
 		return;
 	}
 
@@ -768,6 +835,13 @@ void Object_Hurt(Object* obj, Object* src_obj, int damage)
 	if (obj->type == OT__MONSTER)
 	{
 		Monster_SetState(obj, MS__DIE);
+	}
+	else if (obj->type == OT__PLAYER)
+	{
+		float dir_x = obj->x - src_obj->x;
+		float dir_y = obj->y - src_obj->y;
+
+		Player_Hurt(dir_x, dir_y);
 	}
 }
 
@@ -1035,8 +1109,10 @@ bool Object_HandleObjectCollision(Object* obj, Object* collision_obj)
 	//we have collided with a missile
 	else if (collision_obj->type == OT__MISSILE)
 	{
+		Object* collision_owner = collision_obj->owner;
+
 		//dont collide if we are the owner
-		if (collision_obj->owner == obj)
+		if (collision_owner == obj)
 		{
 			return true;
 		}
@@ -1044,6 +1120,16 @@ bool Object_HandleObjectCollision(Object* obj, Object* collision_obj)
 		if (obj->type == OT__MISSILE)
 		{
 			return true;
+		}
+
+		//dont collide with monster of same type
+		if (collision_owner)
+		{
+			if (collision_owner->type == OT__MONSTER && obj->type == OT__MONSTER && collision_owner->sub_type == obj->sub_type)
+			{
+				return true;
+			}
+
 		}
 
 		//perform direct hit damage
@@ -1058,8 +1144,10 @@ bool Object_HandleObjectCollision(Object* obj, Object* collision_obj)
 	//we are a missile
 	if (obj->type == OT__MISSILE)
 	{
-		//dont collide if hit the owner
-		if (obj->owner == collision_obj)
+		Object* owner = obj->owner;
+
+		//dont collide if we are the owner
+		if (owner == collision_obj)
 		{
 			return true;
 		}
@@ -1069,6 +1157,15 @@ bool Object_HandleObjectCollision(Object* obj, Object* collision_obj)
 			return true;
 		}
 
+		if (owner)
+		{
+			//dont collide with monster of same type
+			if (collision_obj->type == OT__MONSTER && owner->type == OT__MONSTER && collision_obj->sub_type == owner->sub_type)
+			{
+				return true;
+			}
+		}
+		
 		//if we have collided with player or a monster
 		//perform direct hit damage
 		Missile_DirectHit(obj, collision_obj);
@@ -1177,11 +1274,7 @@ Object* Object_Spawn(ObjectType type, SubType sub_type, float x, float y)
 	}
 	case OT__MONSTER:
 	{
-		obj->hp = 50;
-		obj->sprite.img = &assets.imp_texture;
-		obj->size = 1;
-
-		Monster_SetState(obj, MS__IDLE);
+		Monster_Spawn(obj);
 		break;
 	}
 	case OT__THING:
@@ -1227,7 +1320,7 @@ Object* Object_Spawn(ObjectType type, SubType sub_type, float x, float y)
 	}
 	case OT__DOOR:
 	{
-		obj->move_timer = 1;
+		obj->move_timer = 1; // the door spawns closed
 		obj->state = DOOR_SLEEP;
 		break;
 	}

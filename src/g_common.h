@@ -32,13 +32,16 @@ typedef struct
 	Image pickup_textures;
 	Image missile_textures;
 	Image imp_texture;
+	Image pinky_texture;
 	Image minigun_texture;
+	Image sky_texture;
 } GameAssets;
 
 bool Game_LoadAssets();
 void Game_DestructAssets();
 GameAssets* Game_GetAssets();
 void Game_ChangeLevel();
+void Game_Reset(bool to_start);
 
 typedef enum
 {
@@ -76,6 +79,7 @@ typedef enum
 
 	//monsters
 	SUB__MOB_IMP,
+	SUB__MOB_PINKY,
 
 	//pickups
 	SUB__PICKUP_SMALLHP,
@@ -129,8 +133,9 @@ typedef struct
 	float view_x, view_y;
 	float dir_x, dir_y;
 	float size;
+	float speed;
 
-	float hp;
+	int hp;
 
 	int flags;
 
@@ -150,7 +155,6 @@ typedef struct
 	float stuck_timer;
 	DirEnum dir_enum;
 	int state;
-	int monster_type;
 } Object;
 
 typedef struct
@@ -174,8 +178,11 @@ typedef struct
 
 	int level_monster_count;
 	int level_current_monster_count;
+
+	int level_index;
 } Map;
 
+int Map_GetLevelIndex();
 Map* Map_GetMap();
 Object* Map_NewObject(ObjectType type);
 bool Map_Load(const char* filename);
@@ -187,7 +194,7 @@ void Map_GetSpawnPoint(int* r_x, int* r_y);
 bool Map_UpdateObjectTile(Object* obj);
 int Map_GetTotalTiles();
 void Map_Draw(Image* image, Image* texture);
-void Map_DrawObjects(Image* image, float* depth_buffer, float p_x, float p_y, float p_dirX, float p_dirY, float p_planeX, float p_planeY);
+void Map_DrawObjects(Image* image, float* depth_buffer, DrawSpan* draw_spans, float p_x, float p_y, float p_dirX, float p_dirY, float p_planeX, float p_planeY);
 void Map_UpdateObjects(float delta);
 void Map_DeleteObject(Object* obj);
 void Map_Destruct();
@@ -196,11 +203,12 @@ void Map_Destruct();
 //Player stuff
 void Player_Init();
 Object* Player_GetObj();
+void Player_Hurt(float dir_x, float dir_y);
 void Player_HandlePickup(Object* obj);
 void Player_Update(GLFWwindow* window, float delta);
 void Player_GetView(float* r_x, float* r_y, float* r_dirX, float* r_dirY, float* r_planeX, float* r_planeY);
 void Player_MouseCallback(float x, float y);
-void Player_Draw(Image* image);
+void Player_Draw(Image* image, FontData* font);
 
 //Explosion stuff
 void Explosion(Object* obj, float size, int damage);
@@ -234,6 +242,8 @@ void Object_HandleTriggers(Object* obj, Object* trigger);
 Object* Object_Spawn(ObjectType type, SubType sub_type, float x, float y);
 
 //Monster stuff
+void Monster_Spawn(Object* obj);
 void Monster_SetState(Object* obj, int state);
 void Monster_Update(Object* obj, float delta);
 void Monster_Imp_FireBall(Object* obj);
+void Monster_Melee(Object* obj);

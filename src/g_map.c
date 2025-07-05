@@ -126,6 +126,11 @@ static ObjectID Map_GetNewObjectIndex()
 	return id;
 }
 
+int Map_GetLevelIndex()
+{
+	return s_map.level_index;
+}
+
 Map* Map_GetMap()
 {
 	return &s_map;
@@ -343,9 +348,13 @@ bool Map_Load(const char* filename)
 				{
 					map_object = Object_Spawn(OT__THING, SUB__THING_TORCH, obj_x, obj_y);
 				}
-				else if (!strcmp(type_value, "monster"))
+				else if (!strcmp(type_value, "monster_imp"))
 				{
 					map_object = Object_Spawn(OT__MONSTER, SUB__MOB_IMP, obj_x, obj_y);
+				}
+				else if (!strcmp(type_value, "monster_pinky"))
+				{
+					map_object = Object_Spawn(OT__MONSTER, SUB__MOB_PINKY, obj_x, obj_y);
 				}
 				else if (!strcmp(type_value, "pickup_smallhp"))
 				{
@@ -717,7 +726,7 @@ void Map_Draw(Image* image, Image* texture)
 	}
 }
 
-void Map_DrawObjects(Image* image, float* depth_buffer, float p_x, float p_y, float p_dirX, float p_dirY, float p_planeX, float p_planeY)
+void Map_DrawObjects(Image* image, float* depth_buffer, DrawSpan* draw_spans, float p_x, float p_y, float p_dirX, float p_dirY, float p_planeX, float p_planeY)
 {
 	int num_sprites = 0;
 
@@ -745,7 +754,7 @@ void Map_DrawObjects(Image* image, float* depth_buffer, float p_x, float p_y, fl
 	//draw all sprites
 	for (int i = 0; i < num_sprites; i++)
 	{
-		Video_DrawSprite(image, s_spritePointers[i], depth_buffer, p_x, p_y, p_dirX, p_dirY, p_planeX, p_planeY);
+		Video_DrawSprite(image, s_spritePointers[i], depth_buffer, draw_spans, p_x, p_y, p_dirX, p_dirY, p_planeX, p_planeY);
 	}
 
 }
@@ -851,8 +860,13 @@ void Map_DeleteObject(Object* obj)
 
 void Map_Destruct()
 {
+	//keep old level index
+	int old_level_index = s_map.level_index;
+
 	if(s_map.tiles) free(s_map.tiles);
 	if(s_map.object_tiles) free(s_map.object_tiles);
 	
 	memset(&s_map, 0, sizeof(s_map));
+
+	s_map.level_index = old_level_index;
 }

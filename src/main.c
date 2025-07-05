@@ -24,16 +24,19 @@
 #include "main.h"
 #include "sound.h"
 
-#define WINDOW_WIDTH 800
-#define WINDOW_HEIGHT 800
+#define WINDOW_WIDTH 640 * 3
+#define WINDOW_HEIGHT 360 * 3
 
 typedef struct
 {
+	float time_scale;
 	float delta;
 	uint64_t ticks;
 } EngineData;
 
 static EngineData s_engine;
+
+extern void Render_WindowCallback(GLFWwindow* window, int width, int height);
 
 static bool Shader_checkCompileErrors(unsigned int p_object, const char* p_type)
 {
@@ -63,13 +66,6 @@ static bool Shader_checkCompileErrors(unsigned int p_object, const char* p_type)
 	return true;
 }
 
-
-static void WindowCallback(GLFWwindow* window, int width, int height)
-{
-	glViewport(0, 0, width, height);
-
-	//Render_ResizeWindow(width, height);
-}
 static void MouseCallback(GLFWwindow* window, double x, double y)
 {
 	Player_MouseCallback(x, y);
@@ -82,6 +78,20 @@ uint64_t Engine_GetTicks()
 float Engine_GetDeltaTime()
 {
 	return s_engine.delta;
+}
+
+void Engine_SetTimeScale(float scale)
+{
+	if (scale < 0)
+	{
+		scale = 0;
+	}
+	else if (scale > 1)
+	{
+		scale = 1;
+	}
+
+	s_engine.time_scale = scale;
 }
 
 int main()
@@ -130,7 +140,7 @@ int main()
 	}
 
 	glfwMakeContextCurrent(window);
-	glfwSetWindowSizeCallback(window, WindowCallback);
+	glfwSetWindowSizeCallback(window, Render_WindowCallback);
 	glfwSetCursorPosCallback(window, MouseCallback);
 	glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
@@ -270,7 +280,11 @@ int main()
 	unsigned id = glGetUniformLocation(shader_id, "u_proj");
 	glUniformMatrix4fv(id, 1, GL_FALSE, proj);
 
-	
+	glfwSwapInterval(0);
+
+	s_engine.time_scale = 1;
+
+	Render_SetRenderScale(3);
 
 	//MAIN LOOP
 	while (!glfwWindowShouldClose(window))
@@ -278,6 +292,8 @@ int main()
 		currentTime = glfwGetTime();
 		s_engine.delta = currentTime - lastTime;
 		lastTime = currentTime;
+
+		//s_engine.delta *= s_engine.time_scale;
 
 		Player_Update(window, s_engine.delta);
 		Map_UpdateObjects(s_engine.delta);

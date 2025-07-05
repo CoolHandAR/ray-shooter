@@ -25,7 +25,11 @@ typedef struct
 	int move_y;
 	int slow_move;
 	float gun_timer;
+	float hurt_timer;
 	int gun_sound_id;
+
+	int hurt_dir_x;
+	int hurt_dir_y;
 
 	int ammo;
 
@@ -41,6 +45,10 @@ static void Player_ShootGun()
 		return;
 	}
 	if (player.ammo <= 0)
+	{
+		return;
+	}
+	if (player.obj->hp <= 0)
 	{
 		return;
 	}
@@ -75,7 +83,52 @@ static void Player_ShootGun()
 
 
 	Sound_Play(player.gun_sound_id);
-	
+}
+
+static void Shader_Hurt(Image* img, int x, int y, int tx, int ty)
+{
+	int center_x = abs(x - img->half_width);
+	int center_y = abs(y - img->half_height);
+
+	float strenght_x = (float)center_x / (float)img->half_width;
+	float strenght_y = (float)center_y / (float)img->half_height;
+
+	float time_mix = Math_Clamp(player.hurt_timer, 0, 1);
+
+	float lerp = glm_lerp(0, strenght_x, strenght_y) * time_mix;
+
+	unsigned char* sample = Image_Get(img, x, y);
+
+	sample[0] = glm_lerp(sample[0], 255, lerp);
+
+	//screen shake effect
+	if (player.hurt_timer > 0.48)
+	{
+		int r0 = rand() % 2;
+		float random_lerped = glm_lerp(r0, 2, lerp);
+
+		//Image_Set2(img, x + (random_lerped), y + (random_lerped * player.hurt_dir_y), sample);
+
+	}
+}
+
+static void Shader_Dead(Image* img, int x, int y, int tx, int ty)
+{
+	int center_x = abs(x - img->half_width);
+	int center_y = abs(y - img->half_height);
+
+	float strenght_x = (float)center_x / (float)img->half_width;
+	float strenght_y = (float)center_y / (float)img->half_height;
+
+	unsigned char* sample = Image_Get(img, x, y);
+
+	Image_Set2(img, x + (rand() % 2), y - (rand() % 2), sample);
+}
+
+
+static void Player_Die()
+{
+
 }
 
 static void Player_ProcessInput(GLFWwindow* window)
@@ -106,7 +159,15 @@ static void Player_ProcessInput(GLFWwindow* window)
 	}
 	if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS)
 	{
-		Player_ShootGun();
+		if (player.obj->hp > 0)
+		{
+			Player_ShootGun();
+		}
+		else if(player.hurt_timer <= 0.4)
+		{
+			Game_Reset(false);
+		}
+		
 	}
 
 	player.move_x = move_x;
@@ -135,8 +196,8 @@ void Player_Init()
 	GameAssets* assets = Game_GetAssets();
 
 	player.gun_sprite.img = &assets->weapon_textures;
-	player.gun_sprite.scale_x = 3;
-	player.gun_sprite.scale_y = 3;
+	player.gun_sprite.scale_x = 2;
+	player.gun_sprite.scale_y = 2;
 	player.gun_sprite.anim_speed_scale = 0.7;
 	player.gun_sprite.frame = 0;
 	player.gun_sprite.flip_h = false;
@@ -144,9 +205,9 @@ void Player_Init()
 	player.gun_sprite.looping = false;
 	player.gun_sprite.transparency = 0.0;
 	player.gun_sprite.frame_count = 10;
-	player.obj->hp = 5;
+	player.obj->hp = 100;
+	player.obj->size = 0.5;
 
-	Sprite_GenerateAlphaSpans(&player.gun_sprite);
 
 	player.gun_sound_id = Sound_Preload(SOUND__SHOTGUN_SHOOT);
 
@@ -158,6 +219,26 @@ void Player_Init()
 Object* Player_GetObj()
 {
 	return player.obj;
+}
+
+void Player_Hurt(float dir_x, float dir_y)
+{
+
+	if (player.obj->hp <= 0)
+	{
+		Sound_EmitWorldTemp(SOUND__PLAYER_DIE, player.obj->x, player.obj->y, player.obj->dir_x, player.obj->dir_y);
+
+		//Game_Reset(false);
+	}
+	else
+	{
+		Sound_EmitWorldTemp(SOUND__PLAYER_PAIN, player.obj->x, player.obj->y, player.obj->dir_x, player.obj->dir_y);
+	}
+
+	player.hurt_timer = 0.5;
+
+	player.hurt_dir_x = Math_signf(dir_x);
+	player.hurt_dir_y = Math_signf(dir_y);
 }
 
 void Player_HandlePickup(Object* obj)
@@ -195,7 +276,8 @@ void Player_Update(GLFWwindow* window, float delta)
 	float dir_x = (player.move_x * player.obj->dir_x) + (player.move_y * player.plane_x);
 	float dir_y = (player.move_x * player.obj->dir_y) + (player.move_y * player.plane_y);
 
-	Move_Object(player.obj, dir_x * speed, dir_y * speed);
+	if(player.obj->hp > 0)
+		Move_Object(player.obj, dir_x * speed, dir_y * speed);
 
 	Sprite_UpdateAnimation(&player.gun_sprite, delta);
 
@@ -212,6 +294,22 @@ void Player_Update(GLFWwindow* window, float delta)
 	ma_engine_listener_set_position(sound_engine, 0, player.obj->x, 0, player.obj->y);
 	ma_engine_listener_set_direction(sound_engine, 0, -player.obj->dir_x, 0, -player.obj->dir_y);
 	Sound_Set(player.gun_sound_id, player.obj->x, player.obj->y, player.obj->dir_x, player.obj->dir_y);
+
+	player.hurt_timer -= delta;
+
+	if (player.hurt_timer >= 0.4)
+	{
+		//Engine_SetTimeScale(0.95);
+	}
+	else
+	{
+	//	Engine_SetTimeScale(1);
+	}
+
+	if (player.obj->hp <= 0)
+	{
+		//Engine_SetTimeScale(0.1);
+	}
 }
 
 void Player_GetView(float* r_x, float* r_y, float* r_dirX, float* r_dirY, float* r_planeX, float* r_planeY)
@@ -226,6 +324,11 @@ void Player_GetView(float* r_x, float* r_y, float* r_dirX, float* r_dirY, float*
 
 void Player_MouseCallback(float x, float y)
 {
+	if (player.obj->hp <= 0)
+	{
+		return;
+	}
+
 	static bool s_FirstMouse = true;
 
 	static float last_x = 0.0f;
@@ -254,17 +357,30 @@ void Player_MouseCallback(float x, float y)
 	player.plane_y = oldPlaneX * sin(-rotSpeed) + player.plane_y * cos(-rotSpeed);
 }
 
-void Player_Draw(Image* image)
+void Player_Draw(Image* image, FontData* font)
 {
 	//draw gun
-	Video_DrawScreenSprite(image, &player.gun_sprite, 280, 500);
+	if(player.obj->hp > 0)
+		Video_DrawScreenSprite(image, &player.gun_sprite, 0.35, 0.5);
 
-	//draw crosshair
-	int x0 = (image->width / 2) - 5;
-	int y0 = (image->height / 2) -5 ;
-	int x1 = x0 + 15;
-	int y1 = y0 + 15;
+	if (player.hurt_timer > 0)
+	{
+		//Video_Shade(image, Shader_Hurt, 0, 0, image->width, image->height);
+	}
+	if (player.obj->hp > 0)
+	{
+		//draw hud
+		//hp
+		Text_Draw(image, font, 0, 1, 1, 1, "HP %i", player.obj->hp);
 
-	unsigned char color[4] = { 255, 255, 255, 255 };
-	Video_DrawLine(image, x0, y0, x1, y1, color);
+		//ammo
+		Text_Draw(image, font, 0.7, 1, 1, 1, "AMMO %i", player.ammo);
+	}
+	else
+	{
+		//Video_Shade(image, Shader_Hurt, 0, 0, image->width, image->height);
+		//Video_Shade(image, Shader_Dead, 0, 0, image->width, image->height);
+		//Text_Draw(image, font, 0.2, 0.2, 1, 1, "DEAD\n PRESS FIRE TO CONTINUE...");
+	}
+	
 }

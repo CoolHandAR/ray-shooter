@@ -70,13 +70,16 @@ static MonsterAnimState Monster_GetAnimState(Object* obj)
 
 	int sign = (round_dir >= 4) ? -1 : 1;
 
-	if (rotation * sign < 0)
+	if (obj->state != MS__DIE)
 	{
-		obj->sprite.flip_h = true;
-	}
-	else
-	{
-		obj->sprite.flip_h = false;
+		if (rotation * sign < 0)
+		{
+			obj->sprite.flip_h = true;
+		}
+		else
+		{
+			obj->sprite.flip_h = false;
+		}
 	}
 
 	if (obj->state == MS__WALK || obj->state == MS__IDLE)
@@ -115,7 +118,7 @@ static MonsterAnimState Monster_GetAnimState(Object* obj)
 			break;
 		}
 	}
-	else if (obj->state == MS__MISSILE || obj->state == MS__MELEE)
+	else if (obj->state == MS__MISSILE)
 	{
 		switch (round_dir)
 		{
@@ -151,6 +154,42 @@ static MonsterAnimState Monster_GetAnimState(Object* obj)
 			break;
 		}
 	}
+	else if (obj->state == MS__MELEE)
+	{
+		switch (round_dir)
+		{
+		//fallthrough
+		case 0:
+		case 6:
+		{
+			return MAS__MELEE_FORWARD;
+		}
+		//fallthrough
+		case 1:
+		case 5:
+		{
+			return MAS__MELEE_FORWARD_SIDE;
+		}
+		//fallthrough
+		case 2:
+		case 4:
+		{
+			//hack!!
+			if ((fraction < 0.2 && round_dir == 4) || (fraction > 0.2 && round_dir == 2))
+			{
+				return MAS__MELEE_BACK_SIDE;
+			}
+
+			return MAS__MELEE_SIDE;
+		}
+		case 3:
+		{
+			return MAS__MELEE_BACK;
+		}
+		default:
+			break;
+		}
+	}
 	else if (obj->state == MS__HIT)
 	{
 		if (round_dir == 0 || round_dir == 6)
@@ -179,7 +218,7 @@ static void Monster_UpdateSpriteAnimation(Object* obj, float delta)
 {
 	MonsterAnimState anim_state = Monster_GetAnimState(obj);
 
-	const MonsterInfo* info = &MONSTER_INFO[obj->monster_type];
+	const MonsterInfo* info = Info_GetMonsterInfo(obj->sub_type);
 	const AnimInfo* anim_info = &info->anim_states[anim_state];
 
 	Sprite* s = &obj->sprite;
@@ -202,18 +241,33 @@ static void Monster_UpdateSpriteAnimation(Object* obj, float delta)
 	{
 		if (s->frame == anim_info->action_frame && s->action_loop != s->loops)
 		{
+			//play action sound
+			int index = 0;
+			if (obj->sub_type == SUB__MOB_IMP)
+			{
+				index = SOUND__IMP_ATTACK;
+			}
+			else if (obj->sub_type == SUB__MOB_PINKY)
+			{
+				index = SOUND__PINKY_ATTACK;
+			}
+
+			Sound_EmitWorldTemp(index, obj->x, obj->y, obj->dir_x, obj->dir_y);
+
 			anim_info->action_fun(obj);
 			s->action_loop = s->loops;
 		}
 	}
 }
 
-static bool Monster_TryStep(Object* obj)
+static bool Monster_TryStep(Object* obj, float delta)
 {	
 	float dir_x = x_diags[obj->dir_enum];
 	float dir_y = y_diags[obj->dir_enum];
 
-	if (!Move_CheckStep(obj, dir_x, dir_y, 1))
+	delta *= obj->speed;
+
+	if (!Move_CheckStep(obj, dir_x * delta, dir_y * delta, obj->size))
 	{
 		return false;
 	}
@@ -226,6 +280,8 @@ static bool Monster_TryStep(Object* obj)
 
 static bool Monster_Walk(Object* obj, float delta)
 {
+	delta *= obj->speed;
+
 	if (Move_Object(obj, obj->dir_x * delta, obj->dir_y * delta))
 	{
 		Monster_SetState(obj, MS__WALK);
@@ -250,16 +306,16 @@ static bool Monster_Walk(Object* obj, float delta)
 
 static bool Monster_CheckIfMeleePossible(Object* obj)
 {
-	Object* chase_obj = (Object*)obj->target;
+	Object* target = (Object*)obj->target;
 
-	if (!chase_obj)
+	if (!target || target->hp <= 0)
 	{
 		return false;
 	}
 
-	float dist = (obj->x - chase_obj->x) * (obj->x - chase_obj->x) + (obj->y - chase_obj->y) * (obj->y - chase_obj->y);
+	float dist = (obj->x - target->x) * (obj->x - target->x) + (obj->y - target->y) * (obj->y - target->y);
 
-	if (dist < 3)
+	if (dist <= 5)
 	{
 		return true;
 	}
@@ -269,6 +325,11 @@ static bool Monster_CheckIfMeleePossible(Object* obj)
 
 static bool Monster_CheckIfMissilesPossible(Object* obj)
 {
+	if (obj->sub_type == SUB__MOB_PINKY)
+	{
+		return false;
+	}
+
 	Object* chase_obj = (Object*)obj->target;
 
 	if (!chase_obj)
@@ -285,7 +346,7 @@ static bool Monster_CheckIfMissilesPossible(Object* obj)
 	return true;
 }
 
-static void Monster_NewChaseDir(Object* obj)
+static void Monster_NewChaseDir(Object* obj, float delta)
 {
 	Object* target = obj->target;
 
@@ -341,7 +402,7 @@ static void Monster_NewChaseDir(Object* obj)
 		{
 			obj->dir_enum = d;
 
-			if (Monster_TryStep(obj))
+			if (Monster_TryStep(obj, delta))
 			{
 				return;
 			}
@@ -367,7 +428,7 @@ static void Monster_NewChaseDir(Object* obj)
 	if (dirs[0] != DIR_NONE)
 	{
 		obj->dir_enum = dirs[0];
-		if (Monster_TryStep(obj))
+		if (Monster_TryStep(obj, delta))
 		{
 			return;
 		}
@@ -375,7 +436,7 @@ static void Monster_NewChaseDir(Object* obj)
 	if (dirs[1] != DIR_NONE)
 	{
 		obj->dir_enum = dirs[1];
-		if (Monster_TryStep(obj))
+		if (Monster_TryStep(obj, delta))
 		{
 			return;
 		}
@@ -383,7 +444,7 @@ static void Monster_NewChaseDir(Object* obj)
 	if (old_dir != DIR_NONE)
 	{
 		obj->dir_enum = old_dir;
-		if (Monster_TryStep(obj))
+		if (Monster_TryStep(obj, delta))
 		{
 			return;
 		}
@@ -396,7 +457,7 @@ static void Monster_NewChaseDir(Object* obj)
 			if (i != opposite_dir)
 			{
 				obj->dir_enum = i;
-				if (Monster_TryStep(obj))
+				if (Monster_TryStep(obj, delta))
 				{
 					return;
 				}
@@ -410,7 +471,7 @@ static void Monster_NewChaseDir(Object* obj)
 			if (i != opposite_dir)
 			{
 				obj->dir_enum = i;
-				if (Monster_TryStep(obj))
+				if (Monster_TryStep(obj, delta))
 				{
 					return;
 				}
@@ -420,7 +481,7 @@ static void Monster_NewChaseDir(Object* obj)
 	if (opposite_dir != DIR_NONE)
 	{
 		obj->dir_enum = opposite_dir;
-		if (Monster_TryStep(obj))
+		if (Monster_TryStep(obj, delta))
 		{
 			return;
 		}
@@ -457,15 +518,53 @@ static void Monster_LookForTarget(Object* monster)
 	}
 
 	//make sure player is alive and visible
-	if (player->hp <= 0 || !Object_CheckSight(monster, player))
+	if (player->hp <= 0 || !Object_CheckLine(monster, player))
 	{
 		return;
 	}
 
 	monster->target = player;
 
+	int index = 0;
+
 	//play alert sound
-	Sound_EmitWorldTemp(SOUND__IMP_ALERT, monster->x, monster->y, monster->dir_x, monster->dir_y);
+	if (monster->sub_type == SUB__MOB_IMP)
+	{
+		index = SOUND__IMP_ALERT;
+	}
+	else if (monster->sub_type == SUB__MOB_PINKY)
+	{
+		index = SOUND__PINKY_ALERT;
+	}
+
+	Sound_EmitWorldTemp(index, monster->x, monster->y, monster->dir_x, monster->dir_y);
+}
+
+void Monster_Spawn(Object* obj)
+{
+	GameAssets* assets = Game_GetAssets();
+	MonsterInfo* monster_info = Info_GetMonsterInfo(obj->sub_type);
+
+	if (!monster_info)
+	{
+		return;
+	}
+	
+	if (obj->sub_type == SUB__MOB_IMP)
+	{
+		obj->sprite.img = &assets->imp_texture;
+	}
+	else if (obj->sub_type == SUB__MOB_PINKY)
+	{
+		obj->sprite.img = &assets->pinky_texture;
+	}
+
+	obj->hp = monster_info->spawn_hp;
+	obj->size = 1;
+	obj->speed = monster_info->speed;
+
+	Monster_SetState(obj, MS__IDLE);
+
 }
 
 void Monster_SetState(Object* obj, int state)
@@ -477,14 +576,45 @@ void Monster_SetState(Object* obj, int state)
 
 	if (state == MS__HIT)
 	{
-		Sound_EmitWorldTemp(SOUND__IMP_HIT, obj->x, obj->y, obj->dir_x, obj->dir_y);
+		int index = 0;
 
-		obj->stop_timer = 0.3;
+		//play hit sound
+		if (obj->sub_type == SUB__MOB_IMP)
+		{
+			index = SOUND__IMP_HIT;
+		}
+		else if (obj->sub_type == SUB__MOB_PINKY)
+		{
+			index = SOUND__PINKY_HIT;
+		}
+
+		Sound_EmitWorldTemp(index, obj->x, obj->y, obj->dir_x, obj->dir_y);
+
+		if (obj->sub_type == SUB__MOB_PINKY)
+		{
+			return;
+		}
+
+		obj->move_timer = 0;
+		obj->attack_timer = 0;
+		obj->stop_timer = 0.2;
 		obj->flags |= OBJ_FLAG__JUST_HIT;
 	}
 	else if (state == MS__DIE)
 	{
-		Sound_EmitWorldTemp(SOUND__IMP_DIE, obj->x, obj->y, obj->dir_x, obj->dir_y);
+		int index = 0;
+
+		//play death sound
+		if (obj->sub_type == SUB__MOB_IMP)
+		{
+			index = SOUND__IMP_DIE;
+		}
+		else if (obj->sub_type == SUB__MOB_PINKY)
+		{
+			index = SOUND__PINKY_DIE;
+		}
+
+		Sound_EmitWorldTemp(index, obj->x, obj->y, obj->dir_x, obj->dir_y);
 
 		//make sure to forget the target
 		obj->target = NULL;
@@ -496,14 +626,15 @@ void Monster_SetState(Object* obj, int state)
 	//make sure to reset the animation
 	obj->sprite.frame = 0;
 	obj->sprite._anim_frame_progress = 0;
+	obj->sprite.playing = false;
+	obj->sprite.action_loop = 0;
 
-	Monster_UpdateSpriteAnimation(obj, 0);
 }
 
 void Monster_Update(Object* obj, float delta)
 {
 	Monster_UpdateSpriteAnimation(obj, delta);
-	
+
 	//dead
 	if (obj->hp <= 0)
 	{
@@ -524,7 +655,7 @@ void Monster_Update(Object* obj, float delta)
 		Monster_LookForTarget(obj);
 		return;
 	}
-	
+
 	//make sure our target is alive
 	if (target->hp <= 0)
 	{
@@ -541,34 +672,12 @@ void Monster_Update(Object* obj, float delta)
 		return;
 	}
 
-
-	//get a new chase dir or move forward in the direction
-	if (obj->move_timer <= 0  || !Monster_Walk(obj, delta * 2))
-	{
-		Monster_NewChaseDir(obj);
-		obj->move_timer = rand() % 2;
-		return;
-	}
-
-	obj->move_timer -= delta;
-
-	if (obj->flags & OBJ_FLAG__JUST_ATTACKED)
-	{
-		float randomf = (rand() & 0x7fff) / (float)0x7fff;
-
-		//Monster_NewChaseDir(obj);
-		//obj->move_timer = randomf;
-		obj->flags &= ~OBJ_FLAG__JUST_ATTACKED;
-		//return;
-	}
-	
-
 	//check if possible to melee
 	if (Monster_CheckIfMeleePossible(obj))
 	{
-		//Monster_SetState(obj, MS__MELEE);
-		//obj->stop_timer = 1;
-		//return;
+		Monster_SetState(obj, MS__MELEE);
+		obj->stop_timer = 1;
+		return;
 	}
 
 	//check if possible to launch missiles
@@ -580,6 +689,16 @@ void Monster_Update(Object* obj, float delta)
 		obj->attack_timer = 3;
 		return;
 	}
+
+	//get a new chase dir or move forward in the direction
+	if (obj->move_timer <= 0  || !Monster_Walk(obj, delta))
+	{
+		Monster_NewChaseDir(obj, delta);
+		obj->move_timer = Math_randf();
+		return;
+	}
+
+	obj->move_timer -= delta;
 }
 
 void Monster_Imp_FireBall(Object* obj)
@@ -598,4 +717,23 @@ void Monster_Imp_FireBall(Object* obj)
 	Object* missile = Object_Missile(obj, target);
 
 	missile->owner = obj;
+}
+
+void Monster_Melee(Object* obj)
+{
+	Object* target = obj->target;
+
+	if (!target || target->hp <= 0)
+	{
+		return;
+	}
+
+	if (!Monster_CheckIfMeleePossible(obj))
+	{
+		return;
+	}
+
+	Monster_FaceTarget(obj);
+		
+	Object_Hurt(target, obj, 1);
 }
