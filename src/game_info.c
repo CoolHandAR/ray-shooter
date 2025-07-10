@@ -29,3 +29,35 @@ MonsterInfo* Info_GetMonsterInfo(int type)
 
 	return &MONSTER_INFO[index];
 }
+
+ObjectInfo* Info_GetObjectInfo(int type, int sub_type)
+{
+	if (type < 0 || sub_type < 0)
+	{
+		return 0;
+	}
+
+	int index = 0;
+
+	switch (type)
+	{
+	case OT__THING:
+	{
+		switch (sub_type)
+		{
+		case SUB__THING_TORCH:
+		{
+			index = 0;
+			break;
+		}
+		default:
+			break;
+		}
+		
+	}
+	default:
+		break;
+	}
+
+	return &OBJECT_INFOS[index];
+}

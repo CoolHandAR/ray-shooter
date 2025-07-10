@@ -50,11 +50,11 @@ typedef enum
 } MonsterAnimState;
 
 
-typedef void (*MonsterActionFun)(struct Object* obj);
+typedef void (*ActionFun)(struct Object* obj);
 
 typedef struct
 {
-	MonsterActionFun action_fun;
+	ActionFun action_fun;
 	int action_frame;
 	int x_offset;
 	int y_offset;
@@ -269,6 +269,10 @@ typedef enum
 	SOUND__PLAYER_PAIN,
 	SOUND__PLAYER_DIE,
 
+	SOUND__SECRET_FOUND,
+
+	SOUND__TELEPORT,
+
 	SOUND__MAX
 } SoundType;
 
@@ -318,6 +322,12 @@ static const char* SOUND_INFO[SOUND__MAX] =
 
 	//PLAYER DEATH
 	"assets/player_death.wav",
+
+	//SECRET FOUND
+	"assets/secret.wav",
+
+	//TELEPORT
+	"assets/teleport.wav",
 };
 
 typedef enum
@@ -336,7 +346,30 @@ typedef struct
 	float cooldown;
 } GunInfo;
 
+typedef struct
+{
+	AnimInfo anim_info;
+	float anim_speed;
+	float sprite_offset_x;
+	float sprite_offset_y;
+} ObjectInfo;
+
+static const ObjectInfo OBJECT_INFOS[] =
+{
+	//TORCH
+	{
+		//ANIM
+		{
+			NULL, 0, 0, 0, 4, 1,
+		},
+		0.5, //ANIM SPEED
+		0.5, //SPRITE OFFSET X
+		0.5, //SPRITE OFFSET Y
+	}
+};
+
 MonsterInfo* Info_GetMonsterInfo(int type);
+ObjectInfo* Info_GetObjectInfo(int type, int sub_type);
 
 static const char* LEVELS[] =
 {
@@ -344,3 +377,4 @@ static const char* LEVELS[] =
 
 	"test2.json",
 };
+

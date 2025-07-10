@@ -9,7 +9,7 @@
 
 static DirEnum opposite_dirs[DIR_MAX] =
 {
-	//NONE			//NORT
+	//NONE			//NORTH
 	DIR_NONE,		DIR_SOUTH,
 	//NORTH-EAST    //NORTH-WEST
 	DIR_SOUTH_WEST,	DIR_SOUTH_EAST,
@@ -518,7 +518,7 @@ static void Monster_LookForTarget(Object* monster)
 	}
 
 	//make sure player is alive and visible
-	if (player->hp <= 0 || !Object_CheckLine(monster, player))
+	if (player->hp <= 0 || !Object_CheckLineToTarget(monster, player))
 	{
 		return;
 	}

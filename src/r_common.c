@@ -226,10 +226,6 @@ void Image_Blur(Image* img, int size, float scale)
 
 			unsigned char* color = Image_Get(&blur_image, x, y);
 
-			if (!color)
-			{
-				continue;
-			}
 
 			for (int k = 0; k < img->numChannels; k++)
 			{
@@ -511,6 +507,45 @@ void Image_Copy(Image* dest, Image* src)
 	assert(dest->numChannels == src->numChannels);
 	
 	memcpy(dest->data, src->data, sizeof(unsigned char) * dest->width * dest->height * dest->numChannels);
+}
+
+void Image_Blit(Image* dest, Image* src, int dstX0, int dstY0, int dstX1, int dstY1, int srcX0, int srcY0, int srcX1, int srcY1)
+{
+	assert(dest->numChannels == src->numChannels);
+
+	int dx = dstX0;
+	int dy = dstY0;
+
+	for (int x = srcX0; x < srcX1; x++)
+	{
+		dy = dstY0;
+
+		for (int y = srcY0; y < srcY1; y++)
+		{
+
+			unsigned char* sample = Image_Get(src, x, y);
+
+			if (sample[3] <= 128)
+			{
+				continue;
+			}
+
+			Image_Set2(dest, dx, dy, sample);
+
+			dy++;
+
+			if (dy >= dstY1)
+			{
+				break;
+			}
+		}
+		dx++;
+
+		if (dx >= dstX1)
+		{
+			break;
+		}
+	}
 }
 
 void Sprite_UpdateAnimation(Sprite* sprite, float delta)

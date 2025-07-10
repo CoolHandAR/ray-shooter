@@ -10,6 +10,9 @@
 #include "u_math.h"
 
 #define PLAYER_SPEED 10
+#define MOUSE_SENS_DIVISOR 1000
+#define MIN_SENS 0.5
+#define MAX_SENS 16
 
 typedef struct
 {
@@ -33,7 +36,11 @@ typedef struct
 
 	int ammo;
 
+	float sensitivity;
+
 	GunData guns[GUN__MAX];
+
+	bool* visited_tiles;
 } PlayerData;
 
 static PlayerData player;
@@ -66,8 +73,11 @@ static void Player_ShootGun()
 		}
 
 		
-		Gun_Shoot(player.obj, player.obj->x - 0.5, player.obj->y - 0.5, player.obj->dir_x + randomf, player.obj->dir_y + randomf);
+		
+		Gun_Shoot(player.obj, player.obj->x, player.obj->y, player.obj->dir_x + randomf, player.obj->dir_y + randomf);
 	}
+
+	//Object_Spawn(OT__PARTICLE, SUB__PARTICLE_BLOOD, player.obj->x, player.obj->y);
 
 	player.ammo--;
 
@@ -131,6 +141,90 @@ static void Player_Die()
 
 }
 
+static void PressSwitch()
+{
+	for (int i = 1; i < 3; i++)
+	{
+		Object* obj = Map_GetObjectAtTile(player.obj->x + (player.obj->dir_x * i), player.obj->y + (player.obj->dir_y * i));
+
+		if (!obj)
+		{
+			continue;
+		}
+
+		if (obj->type == OT__TRIGGER && obj->sub_type == SUB__TRIGGER_SWITCH)
+		{
+			Object_HandleTriggers(player.obj, obj);
+
+			return;
+		}
+	}
+}
+
+static void DrawMap(Image* image)
+{
+	GameAssets* assets = Game_GetAssets();
+
+	int map_width, map_height;
+	Map_GetSize(&map_width, &map_height);
+
+	const int rect_width = (image->width / map_width);
+	const int rect_height = image->height / map_height;
+
+	for (int x = 0; x < map_width; x++)
+	{
+		for (int y = 0; y < map_height; y++)
+		{
+			TileID tile = Map_GetTile(x, y);
+
+			if (tile == EMPTY_TILE) continue;
+
+			size_t index = x + y * map_width;
+
+			if (!player.visited_tiles[index])
+			{
+				//continue;
+			}
+
+			int cx = x * rect_width;
+			int cy = y * rect_height;
+
+			
+			for (int tx = 0; tx < rect_width; tx++)
+			{
+				for (int ty = 0; ty < rect_height; ty++)
+				{
+					unsigned char* color = Image_Get(&assets->wall_textures, 64 * (tile - 1) + tx, ty);
+
+					Image_Set2(image, cx + tx, cy + ty, color);
+				}
+			}
+
+			unsigned char color[4] = { 0, 0, 0, 0 };
+
+
+			//Video_DrawRectangle(image, cx, cy, rect_width, rect_height, color);
+
+			//top line
+			Video_DrawLine(image, cx, cy, cx + rect_width, cy, color);
+
+			//right line
+			Video_DrawLine(image, cx + rect_width, cy, cx + rect_width, cy + rect_height, color);
+
+			//bottom line
+			Video_DrawLine(image, cx, cy + rect_height, cx + rect_width, cy + rect_height, color);
+
+			//left line
+			Video_DrawLine(image, cx, cy, cx, cy + rect_height, color);
+
+		}
+	}
+
+	unsigned char player_color[4] = { 255, 0, 255, 255 };
+
+	Video_DrawRectangle(image, ((player.obj->x) * rect_width), (player.obj->y * rect_height), 32, 32, player_color);
+}
+
 static void Player_ProcessInput(GLFWwindow* window)
 {
 	int move_x = 0;
@@ -166,8 +260,16 @@ static void Player_ProcessInput(GLFWwindow* window)
 		else if(player.hurt_timer <= 0.4)
 		{
 			Game_Reset(false);
-		}
-		
+		}	
+	}
+	if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+	{
+		Game_SetState(GS__MENU);
+	}
+
+	if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
+	{
+		PressSwitch();
 	}
 
 	player.move_x = move_x;
@@ -175,8 +277,39 @@ static void Player_ProcessInput(GLFWwindow* window)
 	player.slow_move = slow_move;
 }
 
+static void MarkNearbyTiles()
+{
+	int map_width, map_height;
+	Map_GetSize(&map_width, &map_height);
+
+
+	int min_x = player.obj->x - 2;
+	int min_y = player.obj->y - 2;
+								
+	int max_x = player.obj->x + 2;
+	int max_y = player.obj->y + 2;
+
+	for (int x = min_x; x <= max_x; x++)
+	{
+		for (int y = min_y; y <= max_y; y++)
+		{
+			if (Map_GetTile(x, y) != EMPTY_TILE)
+			{
+				size_t index = x + y * map_width;
+
+				player.visited_tiles[index] = true;
+			}
+		}
+	}
+}
+
 void Player_Init()
 {
+	if (player.visited_tiles)
+	{
+		free(player.visited_tiles);
+	}
+
 	memset(&player, 0, sizeof(player));
 	
 	int spawn_x, spawn_y;
@@ -206,14 +339,25 @@ void Player_Init()
 	player.gun_sprite.transparency = 0.0;
 	player.gun_sprite.frame_count = 10;
 	player.obj->hp = 100;
-	player.obj->size = 0.5;
+	player.obj->size = 0.4;
 
+	Player_SetSensitivity(1);
 
 	player.gun_sound_id = Sound_Preload(SOUND__SHOTGUN_SHOOT);
 
 	Sound_setMasterVolume(0.2);
 
 	player.ammo = 14;
+
+	int map_width, map_height;
+	Map_GetSize(&map_width, &map_height);
+
+	player.visited_tiles = malloc(sizeof(bool) * map_width * map_height);
+
+	if (player.visited_tiles)
+	{
+		memset(player.visited_tiles, 0, sizeof(bool) * map_width * map_height);
+	}
 }
 
 Object* Player_GetObj()
@@ -286,6 +430,10 @@ void Player_Update(GLFWwindow* window, float delta)
 		player.gun_sprite.frame = 0;
 	}
 
+	if (dir_x != 0 || dir_y != 0)
+	{
+		MarkNearbyTiles();
+	}
 
 	player.gun_timer -= delta;
 
@@ -347,7 +495,9 @@ void Player_MouseCallback(float x, float y)
 	last_x = x;
 	last_y = y;
 
-	float rotSpeed = xOffset * (1.0 / 1000);
+	float rotSpeed = xOffset * (player.sensitivity / MOUSE_SENS_DIVISOR);
+
+	//rotSpeed *= Engine_GetDeltaTime();
 
 	double oldDirX = player.obj->dir_x;
 	player.obj->dir_x = player.obj->dir_x * cos(-rotSpeed) - player.obj->dir_y * sin(-rotSpeed);
@@ -357,11 +507,11 @@ void Player_MouseCallback(float x, float y)
 	player.plane_y = oldPlaneX * sin(-rotSpeed) + player.plane_y * cos(-rotSpeed);
 }
 
-void Player_Draw(Image* image, FontData* font)
+void Player_Draw(Image* image, FontData* font, DrawSpan* draw_spans)
 {
 	//draw gun
 	if(player.obj->hp > 0)
-		Video_DrawScreenSprite(image, &player.gun_sprite, 0.35, 0.5);
+		Video_DrawScreenSprite(image, &player.gun_sprite, draw_spans, 0.35, 0.5, 1);
 
 	if (player.hurt_timer > 0)
 	{
@@ -371,10 +521,10 @@ void Player_Draw(Image* image, FontData* font)
 	{
 		//draw hud
 		//hp
-		Text_Draw(image, font, 0, 1, 1, 1, "HP %i", player.obj->hp);
+		Text_Draw(image, font, 0.02, 0.88, 1, 1, "HP %i", player.obj->hp);
 
 		//ammo
-		Text_Draw(image, font, 0.7, 1, 1, 1, "AMMO %i", player.ammo);
+		Text_Draw(image, font, 0.75, 0.88, 1, 1, "AMMO %i", player.ammo);
 	}
 	else
 	{
@@ -383,4 +533,24 @@ void Player_Draw(Image* image, FontData* font)
 		//Text_Draw(image, font, 0.2, 0.2, 1, 1, "DEAD\n PRESS FIRE TO CONTINUE...");
 	}
 	
+	//DrawMap(image);
+}
+
+float Player_GetSensitivity()
+{
+	return player.sensitivity;
+}
+
+void Player_SetSensitivity(float sens)
+{
+	if(sens < MIN_SENS)
+	{
+		sens = MIN_SENS;
+	}
+	else if (sens > MAX_SENS)
+	{
+		sens = MAX_SENS;
+	}
+
+	player.sensitivity = sens;
 }

@@ -74,6 +74,15 @@ inline float Math_XY_Dot(float x1, float y1, float x2, float y2)
 	return x1 * x2 + y1 * y2;
 }
 
+inline float Math_XY_Length(float x, float y)
+{
+	vec2 v;
+	v[0] = x;
+	v[1] = y;
+
+	return glm_vec2_norm(v);
+}
+
 inline void Math_XY_Normalize(float* x, float* y)
 {
 	vec2 v;
@@ -84,6 +93,16 @@ inline void Math_XY_Normalize(float* x, float* y)
 
 	*x = v[0];
 	*y = v[1];
+}
+
+inline void Math_XY_Bounce(float x, float y, float nx, float ny, float* r_x, float* r_y)
+{
+	float normal_dot = Math_XY_Dot(nx, ny, x, y);
+
+	*r_x = x - 2.0 * normal_dot * nx;
+	*r_y = y - 2.0 * normal_dot * ny;
+
+	Math_XY_Normalize(r_x, r_y);
 }
 
 

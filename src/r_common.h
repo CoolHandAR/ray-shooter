@@ -8,9 +8,12 @@
 #define MAX_IMAGE_MIPMAPS 8
 #define DEPTH_CLEAR 9999999
 
+#define BASE_RENDER_WIDTH 640
+#define BASE_RENDER_HEIGHT 360
+
 typedef struct
 {
-	uint8_t side;
+	uint8_t light;
 	uint8_t hit_tile;
 	int pointer_index;
 	int width;
@@ -61,6 +64,7 @@ bool Image_SaveToPath(Image* img, const char* filename);
 void Image_Resize(Image* img, int p_width, int p_height);
 void Image_Destruct(Image* img);
 void Image_Copy(Image* dest, Image* src);
+void Image_Blit(Image* dest, Image* src, int dstX0, int dstY0, int dstX1, int dstY1, int srcX0, int srcY0, int srcX1, int srcY1);
 void Image_Set(Image* img, int x, int y, unsigned char r, unsigned char g, unsigned char b, unsigned char a);
 
 inline void Image_Set2(Image* img, int x, int y, unsigned char* color)
@@ -91,6 +95,52 @@ inline void Image_SetFast(Image* img, int x, int y, unsigned char* color)
 
 	memcpy(d, color, img->numChannels);
 }
+inline void Image_SetScaled(Image* img, int x, int y, float scale, unsigned char* color)
+{
+	unsigned char* d = img->data + (x + y * img->width) * img->numChannels;
+
+	//no scale, so set directly
+	if (scale == 1)
+	{
+		memcpy(d, color, img->numChannels);
+	}
+	//completely black
+	else if (scale <= 0)
+	{
+		unsigned char clr[4] = { 0, 0, 0, 255 };
+
+		memcpy(d, clr, img->numChannels);
+	}
+	//scale the color
+	else
+	{
+		unsigned char clr[4];
+
+		for (int i = 0; i < img->numChannels; i++)
+		{
+			//skip alpha component
+			if (i == 3)
+			{
+				clr[i] == 255;
+				continue;
+			}
+
+			int c = (float)color[i] * scale;
+
+			if (c > 255)
+			{
+				c = 255;
+			}
+
+			clr[i] = c;
+		}
+
+		memcpy(d, clr, img->numChannels);
+	}
+	
+}
+
+
 
 inline unsigned char* Image_Get(Image* img, int x, int y)
 {
@@ -113,6 +163,56 @@ inline unsigned char* Image_Get(Image* img, int x, int y)
 
 	return img->data + (x + y * img->width) * img->numChannels;
 }
+
+inline void Image_GetBlured(Image* img, int x, int y, int size, float scale, unsigned char* r_color)
+{
+	if (x < 0)
+	{
+		x = 0;
+	}
+	else if (x >= img->width)
+	{
+		x = img->width - 1;
+	}
+	if (y < 0)
+	{
+		y = 0;
+	}
+	else if (y >= img->height)
+	{
+		y = img->height - 1;
+	}
+
+	int dir_x = 1;
+	int dir_y = 0;
+
+	int half_size = size / 2;
+
+	for (int i = -half_size; i < half_size; i++)
+	{
+		if (i == 0)
+		{
+			continue;
+		}
+
+		float radius = (float)i * scale;
+
+		int tx = x + dir_x * radius;
+		int ty = y + dir_y * radius;
+
+		unsigned char* sample = Image_Get(img, tx, ty);
+
+		for (int k = 0; k < img->numChannels; k++)
+		{
+			r_color[k] += sample[k];
+		}
+	}
+	for (int k = 0; k < img->numChannels; k++)
+	{
+		r_color[k] /= size;
+	}
+}
+
 
 inline unsigned char* Image_GetMipmapped(Image* img, int x, int y, float dist)
 {
@@ -167,14 +267,17 @@ AlphaSpan* FrameInfo_GetAlphaSpan(FrameInfo* frame_info, int x);
 typedef struct
 {
 	float x, y;
+	float offset_x, offset_y;
 	float scale_x, scale_y;
 	float dist;
+	float v_offset;
 	bool flip_h, flip_v;
 
 	bool skip_draw;
 
 	//modifiers
 	float transparency;
+	float light;
 
 	//animation stuff
 	float _anim_frame_progress;
@@ -202,10 +305,11 @@ void Video_DrawRectangle(Image* image, int p_x, int p_y, int p_w, int p_h, unsig
 void Video_Clear(Image* image, unsigned char c);
 void Video_RaycastFloorCeilling(Image* image, Image* texture, float* depth_buffer, int x, int spans, int draw_start, int draw_end, float floor_x, float floor_y, float wall_dist, float p_x, float p_y, bool is_floor);
 void Video_RaycastMap(Image* image, Image* texture, Image* floor_texture, Image* ceil_texture, float* depth_buffer, DrawSpan* draw_spans, float p_x, float p_y, float p_dirX, float p_dirY, float p_planeX, float p_planeY);
-bool Video_DrawCollumn(Image* image, Image* texture, int x, float size, float* depth_buffer, int tex_x, float wall_dist, int side, int tile, int spans, int* r_draw_start, int* r_draw_end);
+bool Video_DrawCollumn(Image* image, Image* texture, int x, float size, float* depth_buffer, int tex_x, float wall_dist, float light, int tile, int spans, int* r_draw_start, int* r_draw_end);
+bool Video_DrawCollumnReflection(Image* image, Image* texture, int x, float size, float* depth_buffer, int tex_x, float wall_dist, int side, int tile, int spans);
 void Video_DrawSprite(Image* image, Sprite* sprite, float* depth_buffer, DrawSpan* draw_spans, float p_x, float p_y, float p_dirX, float p_dirY, float p_planeX, float p_planeY);
 void Video_DrawScreenTexture(Image* image, Image* texture, float p_x, float p_y, float p_scaleX, float p_scaleY);
-void Video_DrawScreenSprite(Image* image, Sprite* sprite, float p_x, float p_y);
+void Video_DrawScreenSprite(Image* image, Sprite* sprite, DrawSpan* draw_spans, float p_x, float p_y, float light);
 
 
 typedef void (*ShaderFun)(Image* image, int x, int y, int tx, int ty);
@@ -269,4 +373,6 @@ typedef struct
 
 bool Text_LoadFont(const char* filename, const char* image_path, FontData* font_data);
 FontGlyphData* FontData_GetGlyphData(const FontData* font_data, char ch);
+void Text_DrawStr(Image* image, const FontData* font_data, float _x, float _y, float scale_x, float scale_y, int r, int g, int b, int a, const char* str);
 void Text_Draw(Image* image, const FontData* font_data, float _x, float _y, float scale_x, float scale_y, const char* fmt, ...);
+void Text_DrawColor(Image* image, const FontData* font_data, float _x, float _y, float scale_x, float scale_y, int r, int g, int b, int a, const char* fmt, ...);

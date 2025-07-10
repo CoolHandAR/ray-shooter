@@ -5,6 +5,8 @@
 #include <cjson/cJSON.h>
 #include <stdlib.h>
 
+#include "u_math.h"
+#include <stdarg.h>
 
 bool Text_LoadFont(const char* filename, const char* image_path, FontData* font_data)
 {
@@ -27,6 +29,8 @@ bool Text_LoadFont(const char* filename, const char* image_path, FontData* font_
 	//we can free the raw char data
 	free(filestr);
 	filestr = NULL;
+
+	font_data->atlas_data.distance_range = 2;
 
 	//Parse atlas data
 	const cJSON* atlas_name = cJSON_GetObjectItem(json, "atlas");
@@ -204,27 +208,16 @@ FontGlyphData* FontData_GetGlyphData(const FontData* font_data, char ch)
 	return &font_data->glyphs_data[glyph_index];
 }
 
-#include "u_math.h"
-#include <stdarg.h>
-
-void Text_Draw(Image* image, const FontData* font_data, float _x, float _y, float scale_x, float scale_y, const char* fmt, ...)
+void Text_DrawStr(Image* image, const FontData* font_data, float _x, float _y, float scale_x, float scale_y, int r, int g, int b, int a, const char* str)
 {
-	if (!fmt || scale_x <= 0 || scale_y <= 0)
+	if (!str || scale_x <= 0 || scale_y <= 0)
 	{
 		return;
 	}
+	
+	float scren_px = 4.5;
 
 	int render_scale = Render_GetRenderScale();
-
-	char str[2048];
-	memset(str, 0, sizeof(str));
-
-	va_list args;
-	va_start(args, fmt);
-
-	vsprintf(str, fmt, args);
-
-	va_end(args);
 
 	int pix_x = _x * image->width;
 	int pix_y = _y * image->height;
@@ -255,10 +248,10 @@ void Text_Draw(Image* image, const FontData* font_data, float _x, float _y, floa
 	const float texel_width = 1.0 / font_data->font_image.width;
 	const float texel_height = 1.0 / font_data->font_image.height;
 
-	const float font_scale = 1.0 / (font_data->metrics_data.descender -font_data->metrics_data.ascender);
+	const float font_scale = 1.0 / (font_data->metrics_data.descender - font_data->metrics_data.ascender);
 
 	const int len = strlen(str);
-	
+
 	const float space_advance = FontData_GetGlyphData(font_data, ' ')->advance;
 
 	double x = pix_x;
@@ -276,15 +269,15 @@ void Text_Draw(Image* image, const FontData* font_data, float _x, float _y, floa
 		else if (ch == '\n')
 		{
 			x = pix_x;
-			pix_y += font_scale * font_data->metrics_data.line_height + 32;
+			pix_y += font_scale * font_data->metrics_data.line_height + font_data->atlas_data.size;
 			continue;
 		}
 		else if (ch == ' ')
 		{
-			x += font_scale * space_advance + 12;
+			x += (font_scale * space_advance + 12) * scale_x;
 			continue;
 		}
-
+		
 		const FontGlyphData* glyph_data = FontData_GetGlyphData(font_data, ch);
 
 		const double x1 = glyph_data->atlas_bounds.left * scale_x;
@@ -293,10 +286,8 @@ void Text_Draw(Image* image, const FontData* font_data, float _x, float _y, floa
 		const double x2 = glyph_data->atlas_bounds.right * scale_x;
 		const double y2 = glyph_data->atlas_bounds.bottom * scale_y;
 
-		float x_step = (glyph_data->atlas_bounds.right - glyph_data->atlas_bounds.left) * scale_x;
-		float y_offset = (glyph_data->atlas_bounds.bottom - glyph_data->atlas_bounds.top) * scale_y;
-
-		float scren_px = 4.5;
+		float x_step = (glyph_data->plane_bounds.right - glyph_data->plane_bounds.left) * scale_x;
+		float y_offset = (glyph_data->plane_bounds.bottom - glyph_data->plane_bounds.top) * scale_y;
 
 		for (int tx = x1; tx < x2; tx++)
 		{
@@ -304,29 +295,19 @@ void Text_Draw(Image* image, const FontData* font_data, float _x, float _y, floa
 			{
 				unsigned char* color = Image_Get(&font_data->font_image, tx * d_scale_x, ty * d_scale_y);
 
-				if (!color)
-				{
-					continue;
-				}
-
 				unsigned char c = color[0];
 
-				float sd = c / 255;
+				float sd = (float)c / 255.0f;
 				float d = scren_px * (sd - 0.5);
 
 				float opacity = Math_Clampd(d + 0.5, 0.0, 1.0);
-			
+
 				unsigned char* im = Image_Get(image, x, y);
 
-				if (!im)
-				{
-					continue;
-				}
-
-				im[0] = glm_lerp(im[0], c, opacity);
-				im[1] = glm_lerp(im[1], c, opacity);
-				im[2] = glm_lerp(im[2], c, opacity);
-				im[3] = 255;
+				im[0] = glm_smoothinterp(im[0], r, opacity);
+				im[1] = glm_smoothinterp(im[1], g, opacity);
+				im[2] = glm_smoothinterp(im[2], b, opacity);
+				im[3] = a;
 
 				y += font_data->metrics_data.em_size;
 			}
@@ -343,6 +324,36 @@ void Text_Draw(Image* image, const FontData* font_data, float _x, float _y, floa
 				break;
 			}
 		}
-	
+
 	}
+}
+
+void Text_Draw(Image* image, const FontData* font_data, float _x, float _y, float scale_x, float scale_y, const char* fmt, ...)
+{
+	char str[2048];
+	memset(str, 0, sizeof(str));
+
+	va_list args;
+	va_start(args, fmt);
+
+	vsprintf(str, fmt, args);
+
+	va_end(args);
+
+	Text_DrawStr(image, font_data, _x, _y, scale_x, scale_y, 255, 255, 255, 255, str);
+}
+
+void Text_DrawColor(Image* image, const FontData* font_data, float _x, float _y, float scale_x, float scale_y, int r, int g, int b, int a, const char* fmt, ...)
+{
+	char str[2048];
+	memset(str, 0, sizeof(str));
+
+	va_list args;
+	va_start(args, fmt);
+
+	vsprintf(str, fmt, args);
+
+	va_end(args);
+
+	Text_DrawStr(image, font_data, _x, _y, scale_x, scale_y, r, g, b, a, str);
 }

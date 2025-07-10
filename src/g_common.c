@@ -6,8 +6,29 @@
 #include "u_math.h"
 
 #include "sound.h"
+#include "main.h"
 
-GameAssets assets;
+static Game game;
+static GameAssets assets;
+
+bool Game_Init()
+{
+	memset(&game, 0, sizeof(game));
+
+	game.state = GS__LEVEL;
+
+	if (!Game_LoadAssets())
+	{
+		return false;
+	}
+
+	return true;
+}
+
+void Game_Exit()
+{
+	Game_DestructAssets();
+}
 
 bool Game_LoadAssets()
 {
@@ -49,12 +70,19 @@ bool Game_LoadAssets()
 	{
 		return false;
 	}
-
-	assets.wall_textures.h_frames = 5;
+	if (!Image_CreateFromPath(&assets.particle_textures, "assets/particle_sheet.png"))
+	{
+		return false;
+	}
+	if (!Image_CreateFromPath(&assets.menu_texture, "assets/menu.png"))
+	{
+		return false;
+	}
+	assets.wall_textures.h_frames = 7;
 	assets.wall_textures.v_frames = 1;
 
 	assets.decoration_textures.h_frames = 4;
-	assets.decoration_textures.v_frames = 1;
+	assets.decoration_textures.v_frames = 2;
 
 	assets.weapon_textures.h_frames = 10;
 	assets.weapon_textures.v_frames = 1;
@@ -74,6 +102,9 @@ bool Game_LoadAssets()
 	assets.pinky_texture.h_frames = 8;
 	assets.pinky_texture.v_frames = 6;
 
+	assets.particle_textures.h_frames = 4;
+	assets.particle_textures.v_frames = 2;
+
 	Image_GenerateFrameInfo(&assets.wall_textures);
 	Image_GenerateFrameInfo(&assets.decoration_textures);
 	Image_GenerateFrameInfo(&assets.weapon_textures);
@@ -82,6 +113,8 @@ bool Game_LoadAssets()
 	Image_GenerateFrameInfo(&assets.missile_textures);
 	Image_GenerateFrameInfo(&assets.minigun_texture);
 	Image_GenerateFrameInfo(&assets.pinky_texture);
+	Image_GenerateFrameInfo(&assets.particle_textures);
+	//Image_GenerateFrameInfo(&assets.menu_texture);
 
 	Image_GenerateMipmaps(&assets.wall_textures);
 
@@ -98,6 +131,88 @@ void Game_DestructAssets()
 	Image_Destruct(&assets.missile_textures);
 	Image_Destruct(&assets.minigun_texture);
 	Image_Destruct(&assets.pinky_texture);
+	Image_Destruct(&assets.particle_textures);
+	Image_Destruct(&assets.menu_texture);
+}
+
+void Game_Update(float delta)
+{
+	GLFWwindow* window = Engine_GetWindow();
+
+	switch (game.state)
+	{
+	case GS__MENU:
+	{
+		Menu_Update(delta);
+		break;
+	}
+	case GS__LEVEL:
+	{
+		Player_Update(window, delta);
+		Map_UpdateObjects(delta);
+
+		if (game.secret_timer > 0) game.secret_timer -= delta;
+		break;
+	}
+	case GS__LEVEL_END:
+	{
+		Menu_LevelEnd_Update(delta, game.prev_secrets_found, game.prev_total_secrets, game.prev_monsters_killed, game.prev_total_monsters);
+		break;
+	}
+	default:
+		break;
+	}
+
+}
+
+void Game_Draw(Image* image, FontData* fd, float* depth_buffer, DrawSpan* draw_spans, float p_x, float p_y, float p_dirX, float p_dirY, float p_planeX, float p_planeY)
+{
+	switch (game.state)
+	{
+	case GS__MENU:
+	{
+		Menu_Draw(image, fd);
+		break;
+	}
+	case GS__LEVEL:
+	{
+		//sort and draw map objects
+		Map_DrawObjects(image, depth_buffer, draw_spans, p_x, p_y, p_dirX, p_dirY, p_planeX, p_planeY);
+
+		//draw player stuff (gun and hud)
+		Player_Draw(image, fd, draw_spans);
+
+		if (game.secret_timer > 0)
+		{
+			Text_DrawColor(image, fd, 0.25, 0.2, 1, 1, 255, 255, 255, 255, "SECRET FOUND!");
+		}
+
+		break;
+	}
+	case GS__LEVEL_END:
+	{
+		Menu_LevelEnd_Draw(image, fd);
+		break;
+	}
+	default:
+		break;
+	}
+}
+
+void Game_SetState(GameState state)
+{
+	if (state != game.state)
+	{
+		Render_RedrawWalls();
+		Render_RedrawSprites();
+	}
+
+	game.state = state;
+}
+
+GameState Game_GetState()
+{
+	return game.state;
 }
 
 GameAssets* Game_GetAssets()
@@ -107,6 +222,16 @@ GameAssets* Game_GetAssets()
 
 void Game_ChangeLevel()
 {
+	game.prev_total_monsters = game.total_monsters;
+	game.prev_total_secrets = game.total_secrets;
+	game.prev_secrets_found = game.secrets_found;
+	game.prev_monsters_killed = game.monsters_killed;
+
+	game.total_secrets = 0;
+	game.total_monsters = 0;
+	game.secrets_found = 0;
+	game.monsters_killed = 0;
+
 	Map* map = Map_GetMap();
 
 	map->level_index++;
@@ -119,9 +244,9 @@ void Game_ChangeLevel()
 	const char* level = LEVELS[map->level_index];
 
 	Map_Load(level);
-
-	
 	Player_Init();
+
+	Game_SetState(GS__LEVEL_END);
 }
 
 void Game_Reset(bool to_start)
@@ -138,6 +263,14 @@ void Game_Reset(bool to_start)
 	Map_Load(level);
 
 	Player_Init();
+}
+
+void Game_SecretFound()
+{
+	Sound_Emit(SOUND__SECRET_FOUND);
+
+	game.secret_timer = 1;
+	game.secrets_found++;
 }
 
 void Explosion(Object* obj, float size, int damage)
@@ -174,7 +307,7 @@ void Explosion(Object* obj, float size, int damage)
 			if (tile_object->type == OT__MONSTER) 
 			{
 				//check straight line between explosion center and object
-				if (Object_CheckLine(obj, tile_object))
+				if (Object_CheckLineToTarget(obj, tile_object))
 				{
 					Object_Hurt(tile_object, obj, damage);
 				}
@@ -614,7 +747,7 @@ void Missile_Explode(Object* obj)
 	obj->flags |= OBJ_FLAG__EXPLODING;
 }
 
-bool Trace_LineVsObject(float p_x, float p_y, float p_endX, float p_endY, Object* obj)
+bool Trace_LineVsObject(float p_x, float p_y, float p_endX, float p_endY, Object* obj, float* r_interX, float* r_interY)
 {
 	float minDistance = 0;
 	float maxDistance = 1;
@@ -623,11 +756,13 @@ bool Trace_LineVsObject(float p_x, float p_y, float p_endX, float p_endY, Object
 
 	float box[2][2];
 
-	box[0][0] = obj->x - 1;
-	box[0][1] = obj->y - 1;
+	float size = obj->size;
 
-	box[1][0] = obj->x + 1;
-	box[1][1] = obj->y + 1;
+	box[0][0] = obj->x - size;
+	box[0][1] = obj->y - size;
+
+	box[1][0] = obj->x + size;
+	box[1][1] = obj->y + size;
 
 	for (int i = 0; i < 2; i++)
 	{
@@ -681,17 +816,27 @@ bool Trace_LineVsObject(float p_x, float p_y, float p_endX, float p_endY, Object
 		}
 	}
 
+	if (r_interX) *r_interX = p_x + (p_endX - p_x) * minDistance;
+	if (r_interY) *r_interY = p_y + (p_endY - p_y) * minDistance;
+
 	return true;
 }
 
 void Gun_Shoot(Object* obj, float p_x, float p_y, float p_dirX, float p_dirY)
 {
+	float map_hit_x = 0;
+	float map_hit_y = 0;
+
+
+
 	int render_w;
-	Render_GetWindowSize(&render_w, NULL);
+	Render_GetRenderSize(&render_w, NULL);
 
 	int half_w = render_w / 2;
 	int center_x = (half_w) - 1;
 	int shoot_delta = render_w / 8;
+
+	//Map_Raycast()
 
 	Map* map = Map_GetMap();
 
@@ -699,6 +844,9 @@ void Gun_Shoot(Object* obj, float p_x, float p_y, float p_dirX, float p_dirY)
 	Object* old_closest = NULL;
 
 	float max_dist = FLT_MAX;
+
+	float hit_x = 0;
+	float hit_y = 0;
 
 	while (true)
 	{
@@ -732,10 +880,16 @@ void Gun_Shoot(Object* obj, float p_x, float p_y, float p_dirX, float p_dirY)
 
 		if (closest == old_closest)
 		{
+
+			if (Map_Raycast(p_x, p_y, p_dirX, p_dirY, &map_hit_x, &map_hit_y) != EMPTY_TILE)
+			{
+				Object_Spawn(OT__PARTICLE, SUB__PARTICLE_WALL_HIT, (map_hit_x), (map_hit_y));
+				return;
+			}
 			return;
 		}
 
-		if (Object_CheckLine(obj, closest))
+		if (Object_CheckLineToTarget(obj, closest))
 		{			
 			break;
 		}
@@ -763,22 +917,17 @@ void Gun_Shoot(Object* obj, float p_x, float p_y, float p_dirX, float p_dirY)
 			return;
 		}
 
+		if (rand() % 100 > 50)
+		{
+			Object_Spawn(OT__PARTICLE, SUB__PARTICLE_BLOOD, (ray_obj->x) + (Math_randf() * 0.5), (ray_obj->y) + (Math_randf() * 0.5));
+		}
+
 		Object_Hurt(ray_obj, obj, dmg);
 	}
 }
 
 void Object_Hurt(Object* obj, Object* src_obj, int damage)
 {
-	if (obj->type != OT__MONSTER)
-	{
-		//return;
-	}
-
-	if (!src_obj)
-	{
-		return;
-	}
-
 	//already dead or no damage
 	if (obj->hp <= 0 || damage <= 0)
 	{
@@ -834,6 +983,7 @@ void Object_Hurt(Object* obj, Object* src_obj, int damage)
 	//set die state
 	if (obj->type == OT__MONSTER)
 	{
+		game.monsters_killed++;
 		Monster_SetState(obj, MS__DIE);
 	}
 	else if (obj->type == OT__PLAYER)
@@ -845,16 +995,16 @@ void Object_Hurt(Object* obj, Object* src_obj, int damage)
 	}
 }
 
-bool Object_CheckLine(Object* obj, Object* target)
+bool Object_CheckLineToTile(Object* obj, float target_x, float target_y)
 {
 	const int max_tiles = Map_GetTotalTiles();
 
-	float x_point = obj->x - target->x;
-	float y_point = obj->y - target->y;
+	float x_point = obj->x - target_x;
+	float y_point = obj->y - target_y;
 
 	float ray_dir_x = x_point;
 	float ray_dir_y = y_point;
-	
+
 	//length of ray from one x or y-side to next x or y-side
 	float delta_dist_x = (ray_dir_x == 0) ? 1e30 : fabs(1.0 / ray_dir_x);
 	float delta_dist_y = (ray_dir_y == 0) ? 1e30 : fabs(1.0 / ray_dir_y);
@@ -862,8 +1012,8 @@ bool Object_CheckLine(Object* obj, Object* target)
 	int map_x = (int)obj->x;
 	int map_y = (int)obj->y;
 
-	int target_tile_x = (int)target->x;
-	int target_tile_y = (int)target->y;
+	int target_tile_x = (int)target_x;
+	int target_tile_y = (int)target_y;
 
 	//we have already reached the target
 	if (map_x == target_tile_x && map_y == target_tile_y)
@@ -902,17 +1052,38 @@ bool Object_CheckLine(Object* obj, Object* target)
 	//perform DDA
 	for (int step = 0; step < max_tiles; step++)
 	{
-		if (side_dist_x < side_dist_y && map_x != target_tile_x)
-		{
-			side_dist_x += delta_dist_x;
-			map_x += step_x;
-		}
-		else if(map_y != target_tile_y)
+		if (map_x == target_tile_x && map_y != target_tile_y)
 		{
 			side_dist_y += delta_dist_y;
 			map_y += step_y;
 		}
-		
+		else if (map_y == target_tile_y && map_x != target_tile_x)
+		{
+			side_dist_x += delta_dist_x;
+			map_x += step_x;
+		}
+		else if(map_x != target_tile_x && map_y != target_tile_y)
+		{
+			if (side_dist_x < side_dist_y)
+			{
+				side_dist_x += delta_dist_x;
+				map_x += step_x;
+			}
+			else
+			{
+				side_dist_y += delta_dist_y;
+				map_y += step_y;
+			}
+		}
+		else
+		{
+			//we have reached the target
+			if (map_x == target_tile_x && map_y == target_tile_y)
+			{
+				break;
+			}
+		}
+
 		//tile blocks the line
 		if (Map_GetTile(map_x, map_y) != EMPTY_TILE)
 		{
@@ -941,15 +1112,22 @@ bool Object_CheckLine(Object* obj, Object* target)
 		{
 
 		}
-
-		//we have reached the target
-		if (map_x == target_tile_x && map_y == target_tile_y)
+		//check for special triggers
+		else if (tile_obj->type == OT__TRIGGER)
 		{
-			break;
+			if (tile_obj->sub_type == SUB__TRIGGER_SWITCH)
+			{
+				return false;
+			}
 		}
 	}
 
 	return true;
+}
+
+bool Object_CheckLineToTarget(Object* obj, Object* target)
+{
+	return Object_CheckLineToTile(obj, target->x, target->y);
 }
 
 bool Object_CheckSight(Object* obj, Object* target)
@@ -989,7 +1167,7 @@ bool Object_CheckSight(Object* obj, Object* target)
 	}
 
 	//check direct line, making sure no tile is in the way
-	if (!Object_CheckLine(obj, target))
+	if (!Object_CheckLineToTarget(obj, target))
 	{
 		return false;
 	}
@@ -1026,6 +1204,7 @@ Object* Object_Missile(Object* obj, Object* target)
 	missile->dir_x = dir_x;
 	missile->dir_y = dir_y;
 	missile->hp = 5;
+	missile->sprite.light = 1;
 	//missile->sprite.h_frames = 5;
 	//missile->sprite.v_frames = 1;
 	missile->sprite.img = &assets->missile_textures;
@@ -1047,6 +1226,11 @@ bool Object_HandleObjectCollision(Object* obj, Object* collision_obj)
 	if (obj == collision_obj)
 	{
 		return true;
+	}
+
+	if (collision_obj->type == OT__PARTICLE)
+	{
+		return;
 	}
 
 	//some objects are ignored from collisions
@@ -1100,11 +1284,17 @@ bool Object_HandleObjectCollision(Object* obj, Object* collision_obj)
 	//handle triggers
 	else if (collision_obj->type == OT__TRIGGER)
 	{	
-		if(obj->type == OT__PLAYER)
+		if (collision_obj->sub_type == SUB__TRIGGER_SWITCH)
+		{
+			return false;
+		}
+		else
+		{
 			Object_HandleTriggers(obj, collision_obj);
 
-		//triggers dont block movement
-		return true;
+			//dont block movement
+			return true;
+		}
 	}
 	//we have collided with a missile
 	else if (collision_obj->type == OT__MISSILE)
@@ -1175,6 +1365,36 @@ bool Object_HandleObjectCollision(Object* obj, Object* collision_obj)
 	return false;
 }
 
+bool Object_HandleSwitch(Object* obj)
+{
+	if (obj->type != OT__TRIGGER)
+	{
+		return false;
+	}
+	if (obj->sub_type != SUB__TRIGGER_SWITCH)
+	{
+		return false;
+	}
+
+	Object* target = obj->target;
+
+	if (target)
+	{
+		//only allow switching if door is fully closed or opened
+		if (target->type == OT__DOOR)
+		{
+			if (target->move_timer > 0 && target->move_timer < 1)
+			{
+				return false;
+			}
+		}
+	}
+
+	obj->flags ^= OBJ_FLAG__TRIGGER_SWITCHED_ON;
+
+	return true;
+}
+
 void Object_HandleTriggers(Object* obj, Object* trigger)
 {
 	//not a trigger
@@ -1183,65 +1403,80 @@ void Object_HandleTriggers(Object* obj, Object* trigger)
 		return;
 	}
 
-	//some do not have targets
-	if (trigger->sub_type == SUB__TRIGGER_CHANGELEVEL)
+	if(trigger->sub_type == SUB__TRIGGER_SWITCH)
 	{
-		Game_ChangeLevel();
-		return;
+		if (!Object_HandleSwitch(trigger))
+		{
+			return;
+		}
 	}
 
 	Object* target = trigger->target;
-
-	//no target
-	if (!target)
+	
+	if (target)
 	{
-		return;
+		if (target->type == OT__TARGET)
+		{
+			switch (target->sub_type)
+			{
+			case SUB__TARGET_TELEPORT:
+			{
+				Sound_EmitWorldTemp(SOUND__TELEPORT, trigger->x, trigger->y, 0, 0);
+
+				Move_Teleport(obj, target->x, target->y);
+				break;
+			}
+			default:
+				break;
+			}
+
+		}
+		else if (target->type == OT__DOOR)
+		{
+			// 0 == door open
+			// 1 == door closed
+
+			//door is open
+			if (target->move_timer == 0)
+			{
+				//close the door
+				target->state = DOOR_CLOSE;
+			}
+			//door is closed
+			else if (target->move_timer == 1)
+			{
+				//open the door
+				target->state = DOOR_OPEN;
+			}
+
+			if (trigger->sub_type == SUB__TRIGGER_ONCE)
+			{
+				target->flags |= OBJ_FLAG__DOOR_NEVER_CLOSE;
+			}
+		}
 	}
-
-	if (target->type == OT__TARGET)
+	//some do not have targets
+	else
 	{
-		switch (target->sub_type)
+		if (obj->type == OT__PLAYER)
 		{
-		case SUB__TARGET_TELEPORT:
-		{
-			Move_Teleport(obj, target->x, target->y);
-			break;
+			if (trigger->sub_type == SUB__TRIGGER_CHANGELEVEL)
+			{
+				Game_ChangeLevel();
+			}
+			else if (trigger->sub_type == SUB__TRIGGER_SECRET)
+			{
+				Game_SecretFound();
+			}
 		}
-		default:
-			break;
-		}
-
-	}
-	else if (target->type == OT__DOOR)
-	{
-		// 0 == door open
-		// 1 == door closed
-
-		//door is open
-		if (target->move_timer == 0)
-		{
-			//close the door
-			//target->state = DOOR_CLOSE;
-		}
-		//door is closed
-		else if(target->move_timer == 1)
-		{
-			//open the door
-			target->state = DOOR_OPEN;
-		}
-
-		if (trigger->sub_type == SUB__TRIGGER_ONCE)
-		{
-			target->flags |= OBJ_FLAG__DOOR_NEVER_CLOSE;
-		}
+		
 	}
 
 	//delete the object if it triggers once
-	if (trigger->sub_type == SUB__TRIGGER_ONCE)
+	if (trigger->sub_type == SUB__TRIGGER_ONCE || trigger->sub_type == SUB__TRIGGER_SECRET)
 	{
 		Map_DeleteObject(trigger);
 	}
-
 }
 
 Object* Object_Spawn(ObjectType type, SubType sub_type, float x, float y)
@@ -1261,8 +1496,8 @@ Object* Object_Spawn(ObjectType type, SubType sub_type, float x, float y)
 	obj->x = x;
 	obj->y = y;
 	
-	obj->sprite.x = x;
-	obj->sprite.y = y;
+	obj->sprite.x = x + obj->sprite.offset_x;
+	obj->sprite.y = y + obj->sprite.offset_y;
 
 	obj->sub_type = sub_type;
 
@@ -1274,22 +1509,30 @@ Object* Object_Spawn(ObjectType type, SubType sub_type, float x, float y)
 	}
 	case OT__MONSTER:
 	{
+		game.total_monsters++;
+
 		Monster_Spawn(obj);
+		break;
+	}
+	case OT__LIGHT:
+	{
+		obj->sprite.img = &assets.decoration_textures;
 		break;
 	}
 	case OT__THING:
 	{
+		ObjectInfo* object_info = Info_GetObjectInfo(obj->type, obj->sub_type);
+		AnimInfo* anim_info = &object_info->anim_info;
+
 		obj->sprite.img = &assets.decoration_textures;
 
-		if (obj->sub_type == SUB__THING_TORCH) 
-		{
-			obj->sprite.frame = 2;
-		}
-		else if (obj->sub_type == SUB__THING_BARREL)
-		{
-			obj->sprite.frame = 1;
-		}
+		obj->sprite.anim_speed_scale = object_info->anim_speed;
+		obj->sprite.frame_count = anim_info->frame_count;
+		obj->sprite.looping = anim_info->looping;
+		obj->sprite.offset_x = anim_info->x_offset;
+		obj->sprite.offset_y = anim_info->y_offset;
 
+		obj->sprite.playing = true;
 		break;
 	}
 	case OT__PICKUP:
@@ -1308,14 +1551,16 @@ Object* Object_Spawn(ObjectType type, SubType sub_type, float x, float y)
 	}
 	case OT__TRIGGER:
 	{
+		Object* target = obj->target;
+
+		if (obj->sub_type == SUB__TRIGGER_SECRET)
+		{
+			game.total_secrets++;
+		}
 		break;
 	}
 	case OT__TARGET:
 	{
-		if (obj->sub_type == SUB__TARGET_TELEPORT)
-		{
-		}
-
 		break;
 	}
 	case OT__DOOR:
@@ -1328,10 +1573,135 @@ Object* Object_Spawn(ObjectType type, SubType sub_type, float x, float y)
 	{
 		break;
 	}
+	case OT__PARTICLE:
+	{
+		obj->sprite.img = &assets.particle_textures;
+		obj->move_timer = 0.5;
+		obj->sprite.v_offset = Math_randf();
+		obj->sprite.scale_x = 0.5;
+		obj->sprite.scale_y = 0.5;
+	
+		if (obj->sub_type == SUB__PARTICLE_BLOOD)
+		{
+			obj->sprite.frame_count = 3;
+			obj->sprite.frame_offset_y = 0;
+			obj->sprite.frame = rand() % 3;
+		}
+		else
+		{
+			obj->sprite.frame_count = 4;
+			obj->sprite.frame_offset_y = 1;
+			obj->sprite.scale_x = 0.2;
+			obj->sprite.scale_y = 0.2;
+
+			obj->sprite.anim_speed_scale = 3;
+			obj->sprite.playing = true;
+			obj->sprite.looping = false;
+		}		
+
+		break;
+	}
 	default:
 		break;
 	}
-
 	
 	return obj;
+}
+
+DirEnum DirVectorToDirEnum(int x, int y)
+{
+	if (x > 0)
+	{
+		if (y > 0)
+		{
+			return DIR_NORTH_WEST;
+		}
+		else if (y < 0)
+		{
+			return DIR_SOUTH_WEST;
+		}
+		else
+		{
+			return DIR_WEST;
+		}
+	}
+	else if (x < 0)
+	{
+		if (y > 0)
+		{
+			return DIR_NORTH_EAST;
+		}
+		else if (y < 0)
+		{
+			return DIR_SOUTH_EAST;
+		}
+		else
+		{
+			return DIR_EAST;
+		}
+	}
+	else if (x == 0)
+	{
+		if (y > 0)
+		{
+			return DIR_NORTH;
+		}
+		else if (y < 0)
+		{
+			return DIR_SOUTH;
+		}
+	}
+
+	return DIR_NONE;
+}
+
+DirEnum DirVectorToRoundedDirEnum(int x, int y)
+{
+	if (x > 0)
+	{
+		return DIR_WEST;
+	}
+	else if (x < 0)
+	{
+		return DIR_EAST;
+	}
+	else if (x == 0)
+	{
+		if (y > 0)
+		{
+			return DIR_NORTH;
+		}
+		else if (y < 0)
+		{
+			return DIR_SOUTH;
+		}
+	}
+
+	return DIR_NONE;
+}
+
+void Particle_Update(Object* obj, float delta)
+{
+	if (obj->sprite.img && obj->sprite.frame_count > 0 && obj->sprite.anim_speed_scale > 0)
+	{
+		Sprite_UpdateAnimation(&obj->sprite, delta);
+	}
+
+	if (obj->sub_type == SUB__PARTICLE_BLOOD)
+	{
+		obj->sprite.v_offset += delta * 4;
+	}
+	else
+	{
+		obj->sprite.v_offset -= delta * 4;
+
+	}
+	
+
+	obj->move_timer -= delta;
+
+	if (obj->move_timer < 0 || obj->sprite.v_offset > 1)
+	{
+		Map_DeleteObject(obj);
+	}
 }

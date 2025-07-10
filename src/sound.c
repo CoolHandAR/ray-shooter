@@ -246,6 +246,18 @@ int Sound_Preload(int type)
 	return id;
 }
 
+void Sound_Emit(int type)
+{
+	const char* sound_file = SOUND_INFO[type];
+
+	if (!sound_file)
+	{
+		return;
+	}
+
+	ma_engine_play_sound(&sound_core.sound_engine, sound_file, NULL);
+}
+
 void Sound_Set(int id, float x, float y, float dir_x, float dir_y)
 {
 	Sound* snd = Sound_IDToSound(id);

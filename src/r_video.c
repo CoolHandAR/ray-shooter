@@ -66,6 +66,23 @@ void Video_DrawLine(Image* image, int x0, int y0, int x1, int y1, unsigned char*
 
 void Video_DrawRectangle(Image* image, int p_x, int p_y, int p_w, int p_h, unsigned char* p_color)
 {
+	if (p_x < 0)
+	{
+		p_x = 0;
+	}
+	if (p_x >= image->width)
+	{
+		p_x = image->width - 1;
+	}
+	if (p_y < 0)
+	{
+		p_y = 0;
+	}
+	if (p_y >= image->height)
+	{
+		p_y = image->height - 1;
+	}
+
 	for (int x = 0; x < p_w; x++)
 	{
 		for (int y = 0; y < p_h; y++)
@@ -74,6 +91,7 @@ void Video_DrawRectangle(Image* image, int p_x, int p_y, int p_w, int p_h, unsig
 		}
 	}
 }
+
 
 void Video_Clear(Image* image, unsigned char c)
 {
@@ -119,20 +137,44 @@ void Video_RaycastFloorCeilling(Image* image, Image* texture, float* depth_buffe
 
 		double weight = (current_dist - dist_view) / (wall_dist - dist_view);
 
-		// Some variables here are called floor but apply to the ceiling here
 		double current_floor_x = weight * floor_x + (1.0 - weight) * p_x;
 		double current_floor_y = weight * floor_y + (1.0 - weight) * p_y;
 
 		int tx = (int)(current_floor_x * 64) & (64 - 1);
 		int ty = (int)(current_floor_y * 64) & (64 - 1);
 	
-		unsigned char* color = Image_Get(texture, tx, ty);
+		unsigned char* tile_color = Image_Get(texture, tx, ty);
 
+		LightTile* light_tile = Map_GetLightTile((int)current_floor_x, (int)current_floor_y);
+
+		float light = 0;
+
+		if (light_tile)
+		{
+			light = (float)light_tile->light / 255.0;
+		}
+
+		if (light == 0)
+		{
+			//break;
+		}
+
+		unsigned char color[4];
+
+		for (int k = 0; k < 4; k++)
+		{
+			color[k] = tile_color[k] * light;
+
+			if (color[k] > 255)
+			{
+				color[k] = 255;
+			}
+		}
+	
 		for (int span = 0; span < spans; span++)
 		{
 			Image_Set2(image, x + span, y, color);
 		}
-		
 	}
 
 }
@@ -245,12 +287,28 @@ static void Video_SetupSpans(Image* image, Image *texture, float* depth_buffer, 
 					continue;
 				}
 
-				if (object->type == OT__DOOR || object->type == OT__SPECIAL_TILE)
+				if (object->type == OT__DOOR || object->type == OT__SPECIAL_TILE || object->type == OT__TRIGGER)
 				{
 					if (object->type == OT__DOOR)
 					{
 						draw_size = object->move_timer;
 						tile = DOOR_TILE;
+					}
+					else if (object->type == OT__TRIGGER)
+					{
+						if (object->sub_type == SUB__TRIGGER_SWITCH)
+						{
+							tile = object->state;
+
+							if (object->flags & OBJ_FLAG__TRIGGER_SWITCHED_ON)
+							{
+								tile++;
+							}
+						}
+						else
+						{
+							continue;
+						}
 					}
 					else
 					{
@@ -290,9 +348,9 @@ static void Video_SetupSpans(Image* image, Image *texture, float* depth_buffer, 
 			wall_x -= floor((wall_x));
 
 			//x coordinate on the texture
-			int tex_x = (int)(wall_x * (double)(64));
-			if (side == 0 && ray_dir_x > 0) tex_x = 64 - tex_x - 1;
-			if (side == 1 && ray_dir_y < 0) tex_x = 64 - tex_x - 1;
+			int tex_x = (int)(wall_x * (double)(TILE_SIZE));
+			if (side == 0 && ray_dir_x > 0) tex_x = TILE_SIZE - tex_x - 1;
+			if (side == 1 && ray_dir_y < 0) tex_x = TILE_SIZE - tex_x - 1;
 
 			if (draw_floor_ceilling)
 			{
@@ -323,7 +381,7 @@ static void Video_SetupSpans(Image* image, Image *texture, float* depth_buffer, 
 				span->floor_y = floor_y_wall;
 			}
 		
-			span->side = side;
+			span->light = 0;
 			span->tex_x = tex_x;
 			span->wall_dist = wall_dist;
 			span->hit_tile = tile;
@@ -359,6 +417,37 @@ static void Video_SetupSpans(Image* image, Image *texture, float* depth_buffer, 
 				}
 			}
 
+			LightTile* light_tile = Map_GetLightTile(map_x, map_y);
+			
+			if (light_tile && light_tile->light > 0)
+			{
+				span->light = light_tile->light;
+
+				if (side == 0)
+				{
+					if (ray_dir_x < 0)
+					{
+						span->light = light_tile->light_east;
+					}
+					else
+					{
+						span->light = light_tile->light_west;
+					}
+				}
+				else if (side == 1)
+				{
+					if (ray_dir_y < 0)
+					{
+						span->light = light_tile->light_south;
+					}
+					else
+					{
+						span->light = light_tile->light_north;
+					}
+				}
+			}
+
+			
 			prev_side = side;
 			prev_tile = tile;
 			prev_tile_x = map_x;
@@ -369,7 +458,9 @@ static void Video_SetupSpans(Image* image, Image *texture, float* depth_buffer, 
 			{
 				span->width = 0;
 
-				if (!Video_DrawCollumn(image, texture, x, draw_size, depth_buffer, span->tex_x, span->wall_dist, span->side, span->hit_tile, 1, NULL, NULL))
+				float light = (float)span->light / 255.0f;
+
+				if (!Video_DrawCollumn(image, texture, x, draw_size, depth_buffer, span->tex_x, span->wall_dist, light, span->hit_tile, 1, NULL, NULL))
 				{
 					break;
 				}
@@ -389,7 +480,11 @@ static void Video_SetupSpans(Image* image, Image *texture, float* depth_buffer, 
 
 void Video_RaycastMap(Image* image, Image* texture, Image* floor_texture, Image* ceil_texture, float* depth_buffer, DrawSpan* draw_spans, float p_x, float p_y, float p_dirX, float p_dirY, float p_planeX, float p_planeY)
 {
+	doors_drawn = 0;
+
 	bool draw_floor_ceilling = (floor_texture || ceil_texture);
+
+	draw_floor_ceilling = true;
 
 	Video_SetupSpans(image, texture, depth_buffer, draw_spans, image->width, p_x, p_y, p_dirX, p_dirY, p_planeX, p_planeY, draw_floor_ceilling);
 
@@ -405,28 +500,32 @@ void Video_RaycastMap(Image* image, Image* texture, Image* floor_texture, Image*
 		int draw_start = 0;
 		int draw_end = 0;
 
-		if (!Video_DrawCollumn(image, texture, x, 1, depth_buffer, span->tex_x, span->wall_dist, span->side, span->hit_tile, span->width, &draw_start, &draw_end))
+		float light = (float)span->light / 255.0f;
+
+		if (!Video_DrawCollumn(image, texture, x, 1, depth_buffer, span->tex_x, span->wall_dist, light, span->hit_tile, span->width, &draw_start, &draw_end))
 		{
 			continue;
 		}
-
+	
 		//draw floor
 		if (floor_texture)
 		{
-			Video_RaycastFloorCeilling(image, texture, depth_buffer, x, span->width, draw_start, draw_end, span->floor_x, span->floor_y, span->wall_dist, p_x, p_y, true);
+			//Video_RaycastFloorCeilling(image, texture, depth_buffer, x, span->width, draw_start, draw_end, span->floor_x, span->floor_y, span->wall_dist, p_x, p_y, true);
 		}
 
+		//Video_RaycastFloorCeilling(image, texture, depth_buffer, x, span->width, draw_start, draw_end, span->floor_x, span->floor_y, span->wall_dist, p_x, p_y, true);
+		//Video_RaycastFloorCeilling(image, texture, depth_buffer, x, span->width, draw_start, draw_end, span->floor_x, span->floor_y, span->wall_dist, p_x, p_y, false);
 		//draw ceilling
 		if (ceil_texture)
 		{
-			Video_RaycastFloorCeilling(image, texture, depth_buffer, x, span->width, draw_start, draw_end, span->floor_x, span->floor_y, span->wall_dist, p_x, p_y, false);
+			//Video_RaycastFloorCeilling(image, texture, depth_buffer, x, span->width, draw_start, draw_end, span->floor_x, span->floor_y, span->wall_dist, p_x, p_y, false);
 		}
 
 		x += span->width - 1;
 	}
 }
 
-bool Video_DrawCollumn(Image* image, Image* texture, int x, float size, float* depth_buffer, int tex_x, float wall_dist, int side, int tile, int spans, int* r_draw_start, int* r_draw_end)
+bool Video_DrawCollumn(Image* image, Image* texture, int x, float size, float* depth_buffer, int tex_x, float wall_dist, float light, int tile, int spans, int* r_draw_start, int* r_draw_end)
 {
 	//nothing to draw
 	if (tile == EMPTY_TILE || wall_dist <= 0 || spans <= 0)
@@ -456,10 +555,6 @@ bool Video_DrawCollumn(Image* image, Image* texture, int x, float size, float* d
 		return false;
 	}
 
-	float collumn_pixels = (float)(image->width) / (float)collumn_height;
-
-	collumn_pixels /= 20;
-
 	//calculate lowest and highest pixel to fill in current stripe
 	int draw_start = -collumn_height / 2 + image->height / 2 + v_offset;
 	if (draw_start < 0) draw_start = 0;
@@ -471,7 +566,110 @@ bool Video_DrawCollumn(Image* image, Image* texture, int x, float size, float* d
 		return false;
 	}
 
-	float step = 1.0 * 64 / original_height;
+	float step = 1.0 * TILE_SIZE / original_height;
+
+	// Starting texture coordinate
+	float tex_pos = (draw_start - image->height / 2 + collumn_height / 2) * (step * size);
+
+	//draw the vertical collumn
+	for (int y = draw_start; y < draw_end; y++)
+	{
+		float depth = depth_buffer[x + y * image->width];
+
+		//depth is set by other tile
+		if (depth < (int)DEPTH_CLEAR)
+		{
+			break;
+		}
+
+		if (light > 0)
+		{
+			// Cast the texture coordinate to integer, and mask with (texHeight - 1) in case of overflow
+			int tex_y = (int)tex_pos & (TILE_SIZE - 1);
+			tex_pos += step;
+
+			//get tile color
+			unsigned char* tile_color = Image_Get(texture, tex_x + (TILE_SIZE * (tile - 1)), tex_y);
+
+			unsigned char color[4];
+
+			for (int l = 0; l < 4; l++)
+			{
+				int c = (float)tile_color[l] * light;
+
+				if (c > 255)
+				{
+					c = 255;
+				}
+
+				color[l] = (unsigned char)c;
+			}
+			for (int span = 0; span < spans; span++)
+			{
+				Image_SetFast(image, x + span, y, color);
+				depth_buffer[(x + span) + y * image->width] = wall_dist;
+			}
+		}
+		else
+		{
+			unsigned char color[4] = { 0, 0, 0, 255 };
+			for (int span = 0; span < spans; span++)
+			{
+				Image_SetFast(image, x + span, y, color);
+				depth_buffer[(x + span) + y * image->width] = wall_dist;
+			}
+		}
+		
+	}
+
+	if(r_draw_start) *r_draw_start = draw_start;
+	if(r_draw_end) *r_draw_end = draw_end;
+
+	return true;
+}
+
+bool Video_DrawCollumnReflection(Image* image, Image* texture, int x, float size, float* depth_buffer, int tex_x, float wall_dist, int side, int tile, int spans)
+{
+	//nothing to draw
+	if (tile == EMPTY_TILE || wall_dist <= 0 || spans <= 0)
+	{
+		return false;
+	}
+
+	int v_offset = 0;
+	int size_offset = 0;
+
+	int off = image->height * (1.0 - size);
+
+	v_offset = (int)((off / 2) / wall_dist);
+	size_offset = (int)(off / wall_dist);
+
+	int original_height = 0;
+
+	//Calculate height of collumn
+	int collumn_height = (int)(image->height / wall_dist);
+
+	original_height = collumn_height;
+
+	collumn_height -= size_offset;
+
+	if (collumn_height <= 0)
+	{
+		return false;
+	}
+
+	//calculate lowest and highest pixel to fill in current stripe
+	int draw_start = collumn_height / 2 + image->height / 2 + v_offset;
+	if (draw_start < 0) draw_start = 0;
+	int draw_end = (collumn_height + (collumn_height / 3)) + image->height / 2 + v_offset;
+	if (draw_end >= image->height) draw_end = image->height - 1;
+
+	if (draw_start > image->width || draw_end < 0)
+	{
+		return false;
+	}
+
+	float step = 1.0 * TILE_SIZE / original_height;
 
 	// Starting texture coordinate
 	float tex_pos = (draw_start - image->height / 2 + collumn_height / 2) * (step * size);
@@ -488,12 +686,11 @@ bool Video_DrawCollumn(Image* image, Image* texture, int x, float size, float* d
 		}
 
 		// Cast the texture coordinate to integer, and mask with (texHeight - 1) in case of overflow
-		int tex_y = (int)tex_pos & (64 - 1);
+		int tex_y = (int)tex_pos & (TILE_SIZE - 1);
 		tex_pos += step;
 
-
 		//get tile color
-		unsigned char* tile_color = Image_Get(texture, tex_x + (64 * (tile - 1)), tex_y);
+		unsigned char* tile_color = Image_Get(texture, tex_x + (TILE_SIZE * (tile - 1)), 63 - tex_y);
 
 		//make y side darker
 		if (side == 1)
@@ -518,16 +715,12 @@ bool Video_DrawCollumn(Image* image, Image* texture, int x, float size, float* d
 			}
 		}
 	}
-
-	if(r_draw_start) *r_draw_start = draw_start;
-	if(r_draw_end) *r_draw_end = draw_end;
-
 	return true;
 }
 
 void Video_DrawSprite(Image* image, Sprite* sprite, float* depth_buffer, DrawSpan* draw_spans, float p_x, float p_y, float p_dirX, float p_dirY, float p_planeX, float p_planeY)
 {
-	//adapted from https://lodev.org/cgtutor/raycasting3.html
+	//adapted parts from https://lodev.org/cgtutor/raycasting3.html
 
 	float aspect = Render_GetWindowAspect();
 
@@ -575,9 +768,6 @@ void Video_DrawSprite(Image* image, Sprite* sprite, float* depth_buffer, DrawSpa
 
 	int sprite_screen_x = (int)((image->width / 2) * (1 + transform_x / transform_y));
 
-#define vMove 0.0
-	int v_move_screen = (int)(vMove / transform_y);
-
 	int sprite_width = fabs((int)(image->height / (transform_y))) * (sprite->scale_x); // same as height of sprite, given that it's square
 	int sprite_height = fabs((int)(image->height / (transform_y))) * (sprite->scale_y); //using "transformY" instead of the real distance prevents fisheye
 
@@ -586,6 +776,7 @@ void Video_DrawSprite(Image* image, Sprite* sprite, float* depth_buffer, DrawSpa
 		return;
 	}
 
+	int v_move_screen = (int)((sprite->v_offset * image->half_height) / transform_y);
 
 	//calculate lowest and highest pixel to fill in current stripe
 	int draw_start_y = -sprite_height / 2 + image->height / 2 + v_move_screen;
@@ -627,6 +818,12 @@ void Video_DrawSprite(Image* image, Sprite* sprite, float* depth_buffer, DrawSpa
 	{
 		return;
 	}
+
+	LightTile* light_tile = Map_GetLightTile((int)sprite->x, (int)sprite->y);
+
+	float light = (float)light_tile->light / 255.0f;
+
+	light = glm_clamp(light + sprite->light, 0, 1);
 
 	FrameInfo* frame_info = Image_GetFrameInfo(sprite->img, sprite->frame + (sprite->frame_offset_x) + (sprite->frame_offset_y * sprite->img->h_frames));
 
@@ -679,7 +876,6 @@ void Video_DrawSprite(Image* image, Sprite* sprite, float* depth_buffer, DrawSpa
 			draw_start_x = stripe;
 		}
 
-		span->pointer_index = -1;
 		span->width = 1;
 		span->tex_x = tex_x;
 
@@ -761,12 +957,12 @@ void Video_DrawSprite(Image* image, Sprite* sprite, float* depth_buffer, DrawSpa
 				break;
 			}
 
-			unsigned char* color = Image_Get(sprite->img, tex_x + (sprite_offset_x * sprite_rect_width), tex_y + (sprite_offset_y * sprite_rect_height));
+			unsigned char* tex_color = Image_Get(sprite->img, tex_x + (sprite_offset_x * sprite_rect_width), tex_y + (sprite_offset_y * sprite_rect_height));
 
 			//alpha discard if possible
 			if (sprite->img->numChannels >= 4)
 			{
-				if (color[3] < 128)
+				if (tex_color[3] < 128)
 				{
 					continue;
 				}
@@ -782,22 +978,33 @@ void Video_DrawSprite(Image* image, Sprite* sprite, float* depth_buffer, DrawSpa
 					//just do directly on the buffer pointer
 					for (int k = 0; k < image->numChannels; k++)
 					{
-						old_color[k] = (old_color[k] / transparency) + (color[k] / 2);
+						old_color[k] = (old_color[k] / transparency) + (tex_color[k] / 2);
 					}
 
 					depth_buffer[(stripe + l) + y * image->width] = transform_y;
 				}
 				
-
 			}
 			else
 			{
+				unsigned char color[4];
+
+				for (int l = 0; l < 4; l++)
+				{
+					int c = (float)tex_color[l] * light;
+
+					if (c > 255)
+					{
+						c = 255;
+					}
+
+					color[l] = (unsigned char)c;
+				}
 				for (int l = 0; l < draw_span->width; l++)
 				{
-					Image_SetFast(image, stripe + l, y, color);
+					Image_Set2(image, stripe + l, y, color);
 					depth_buffer[(stripe + l) + y * image->width] = transform_y;
 				}
-				
 			}
 		}
 		
@@ -823,6 +1030,9 @@ void Video_DrawScreenTexture(Image* image, Image* texture, float p_x, float p_y,
 	p_scaleX *= render_scale;
 	p_scaleY *= render_scale;
 
+	float d_scale_x = 1.0 / p_scaleX;
+	float d_scale_y = 1.0 / p_scaleY;
+
 	const int rect_width = texture->width * p_scaleX;
 	const int rect_height = texture->height * p_scaleY;
 
@@ -830,12 +1040,7 @@ void Video_DrawScreenTexture(Image* image, Image* texture, float p_x, float p_y,
 	{
 		for (int y = 0; y < rect_height; y++)
 		{
-			unsigned char* color = Image_Get(texture, x * (1.0 / p_scaleX), y * (1.0 / p_scaleY));
-
-			if (!color)
-			{
-				continue;
-			}
+			unsigned char* color = Image_Get(texture, x * d_scale_x, y * d_scale_y);
 
 			//perform alpha discarding if there is an alpha channel
 			if (texture->numChannels >= 4)
@@ -852,7 +1057,7 @@ void Video_DrawScreenTexture(Image* image, Image* texture, float p_x, float p_y,
 	
 }
 
-void Video_DrawScreenSprite(Image* image, Sprite* sprite, float p_x, float p_y)
+void Video_DrawScreenSprite(Image* image, Sprite* sprite, DrawSpan* draw_spans, float p_x, float p_y, float light)
 {
 	if (sprite->scale_x <= 0 || sprite->scale_y <= 0)
 	{
@@ -893,7 +1098,6 @@ void Video_DrawScreenSprite(Image* image, Sprite* sprite, float p_x, float p_y)
 	rect_width *= scale_x;
 	rect_height *= scale_y;
 
-
 	if (sprite->flip_h)
 	{
 		offset_x += 1;
@@ -915,10 +1119,65 @@ void Video_DrawScreenSprite(Image* image, Sprite* sprite, float p_x, float p_y)
 		if (min_x > 0) min_x -= 1;
 		max_x += 1;
 	}
+	
+	int prev_tex_x = -1;
 
 	for (int x = min_x; x <= max_x; x++)
 	{
+		DrawSpan* draw_span = &draw_spans[x];
+
+		draw_span->pointer_index = -1;
+		draw_span->width = 0;
+
 		int tx = 0;
+
+		//flip the sprite horizontally
+		if (sprite->flip_h)
+		{
+			tx = (offset_x * rect_width - x - 1) * d_scale_x;
+		}
+		else
+		{
+			tx = (x + offset_x * rect_width) * d_scale_x;
+		}
+
+		draw_span->width = 1;
+		draw_span->tex_x = tx;
+
+		if (x > 0 && prev_tex_x == tx)
+		{
+			DrawSpan* prev_span = &draw_spans[x - 1];
+
+			if (prev_span->pointer_index == -1)
+			{
+				draw_span->pointer_index = x - 1;
+				prev_span->width++;
+
+			}
+			else
+			{
+				DrawSpan* pointer_span = &draw_spans[prev_span->pointer_index];
+				pointer_span->width++;
+				draw_span->pointer_index = prev_span->pointer_index;
+			}
+
+			draw_span->width = 0;
+		}
+
+		prev_tex_x = tx;
+	}
+
+
+	for (int x = min_x; x <= max_x; x++)
+	{
+		DrawSpan* draw_span = &draw_spans[x];
+
+		if (draw_span->width == 0)
+		{
+			continue;
+		}
+
+		int tx = draw_span->tex_x;
 		int ty = 0;
 
 		int span_x = (sprite->flip_h) ? (rect_width - x - 1) : x;
@@ -930,17 +1189,6 @@ void Video_DrawScreenSprite(Image* image, Sprite* sprite, float p_x, float p_y)
 			continue;
 		}
 		
-		//flip the sprite horizontally
-		if (sprite->flip_h)
-		{
-			tx = (offset_x * rect_width - x - 1) * d_scale_x;
-		}
-		else
-		{
-			tx = (x + offset_x * rect_width) * d_scale_x;
-		}
-
-
 		int y_min = (sprite->flip_v) ? (rect_height - (span->max * scale_y)) : span->min * scale_y;
 		int y_max = (sprite->flip_v) ? (rect_height - (span->min * scale_y)) : span->max * scale_y;
 
@@ -965,11 +1213,6 @@ void Video_DrawScreenSprite(Image* image, Sprite* sprite, float p_x, float p_y)
 
 			unsigned char* color = Image_Get(sprite->img, tx, ty);
 
-			if (!color)
-			{
-				continue;
-			}
-
 			//perform alpha discarding if there is 4 color channels
 			//most pixels should be discarded with alpha spans
 			if (sprite->img->numChannels >= 4)
@@ -983,27 +1226,34 @@ void Video_DrawScreenSprite(Image* image, Sprite* sprite, float p_x, float p_y)
 			//apply transparency
 			if (transparency > 1)
 			{
-				unsigned char* old_color = Image_Get(image, x + p_x, y + p_y);
-
-				if (!old_color)
+				for (int l = 0; l < draw_span->width; l++)
 				{
-					continue;
-				}
+					unsigned char* old_color = Image_Get(image, (x + pix_x) + l, y + pix_y);
 
-				//just do directly on the buffer pointer
-				for (int k = 0; k < image->numChannels; k++)
-				{
-					old_color[k] = (old_color[k] / transparency) + (color[k] / 2);
+					//just do directly on the buffer pointer
+					for (int k = 0; k < image->numChannels; k++)
+					{
+						old_color[k] = (old_color[k] / transparency) + (color[k] / 2);
+					}
 				}
 
 			}
 			else
 			{
-				Image_Set2(image, x + pix_x, y + pix_y, color);
-			}
+				if (light < 1.0)
+				{
 
-			
+				}
+
+				for (int l = 0; l < draw_span->width; l++)
+				{
+					Image_Set2(image, (x + pix_x) + l, y + pix_y, color);
+				}
+				
+			}
 		}
+
+		x += draw_span->width - 1;
 	}
 
 }

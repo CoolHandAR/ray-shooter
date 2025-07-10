@@ -193,17 +193,22 @@ void Render_ResizeWindow(int width, int height)
 	s_renderCore.redraw_sprites = true;
 
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+
 }
 
 void Render_View(float x, float y, float dir_x, float dir_y, float plane_x, float plane_y)
 {
 	GameAssets* assets = Game_GetAssets();
+	GameState game_state = Game_GetState();
 
 	//check if we need to redraw walls
 	s_renderCore.redraw_walls = Render_CheckForRedraw(x, y, dir_x, dir_y, plane_x, plane_y);
 
+//	s_renderCore.redraw_walls = true;
+//	s_renderCore.redraw_sprites = true;
+
 	//raycast and render all wall tiles
-	if (s_renderCore.redraw_walls)
+	if (s_renderCore.redraw_walls && game_state == GS__LEVEL)
 	{
 		Image_Copy(&s_renderCore.wall_buffer, &s_renderCore.clear_framebuffer);
 
@@ -220,17 +225,10 @@ void Render_View(float x, float y, float dir_x, float dir_y, float plane_x, floa
 
 		memcpy(s_renderCore.depth_buffer, s_renderCore.wall_depth_buffer, sizeof(float) * s_renderCore.w * s_renderCore.h);
 
-		//sort and draw map objects
-		Map_DrawObjects(&s_renderCore.framebuffer, s_renderCore.depth_buffer, s_renderCore.draw_spans, x, y, dir_x, dir_y, plane_x, plane_y);
-
-		//draw player stuff (gun and hud)
-		Player_Draw(&s_renderCore.framebuffer, &s_renderCore.font_data);
+		Game_Draw(&s_renderCore.framebuffer, &s_renderCore.font_data, s_renderCore.depth_buffer, s_renderCore.draw_spans, x, y, dir_x, dir_y, plane_x, plane_y);
 
 		//Video_DrawScreenTexture(&s_renderCore.framebuffer, assets->wall_textures.mipmaps[0], 100, 100, 1, 1);
 	}
-
-	
-
 
 	//upload video bytes
 	if (s_renderCore.redraw_sprites || s_renderCore.redraw_walls)
@@ -282,8 +280,10 @@ void Render_SetRenderScale(int scale)
 	{
 		scale = 3;
 	}
-
+	
 	s_renderCore.scale = scale;
+
+	Render_ResizeWindow(BASE_RENDER_WIDTH * scale, BASE_RENDER_HEIGHT * scale);
 }
 
 float Render_GetWindowAspect()

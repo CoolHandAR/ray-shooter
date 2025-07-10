@@ -17,6 +17,7 @@
 #include <time.h>
 #include <assert.h>
 #include <math.h>
+#include <windows.h>
 
 #include "g_common.h"
 #include "r_common.h"
@@ -24,8 +25,10 @@
 #include "main.h"
 #include "sound.h"
 
-#define WINDOW_WIDTH 640 * 3
-#define WINDOW_HEIGHT 360 * 3
+#define WINDOW_SCALE 3
+
+#define WINDOW_WIDTH 640
+#define WINDOW_HEIGHT 360
 
 typedef struct
 {
@@ -34,6 +37,7 @@ typedef struct
 	uint64_t ticks;
 } EngineData;
 
+GLFWwindow* window;
 static EngineData s_engine;
 
 extern void Render_WindowCallback(GLFWwindow* window, int width, int height);
@@ -66,6 +70,28 @@ static bool Shader_checkCompileErrors(unsigned int p_object, const char* p_type)
 	return true;
 }
 
+static void Render_ThreadLoop()
+{
+	glfwMakeContextCurrent(window);
+
+	float view_x = 0;
+	float view_y = 0;
+	float view_dir_x = 0;
+	float view_dir_y = 0;
+	float view_plane_x = 0;
+	float view_plane_y = 0;
+
+	while (true)
+	{
+		Player_GetView(&view_x, &view_y, &view_dir_x, &view_dir_y, &view_plane_x, &view_plane_y);
+
+		Render_View(view_x, view_y, view_dir_x, view_dir_y, view_plane_x, view_plane_y);
+
+		glfwSwapBuffers(window);
+	}
+}
+
+
 static void MouseCallback(GLFWwindow* window, double x, double y)
 {
 	Player_MouseCallback(x, y);
@@ -94,6 +120,11 @@ void Engine_SetTimeScale(float scale)
 	s_engine.time_scale = scale;
 }
 
+GLFWwindow* Engine_GetWindow()
+{
+	return window;
+}
+
 int main()
 {
 	memset(&s_engine, 0, sizeof(EngineData));
@@ -104,7 +135,7 @@ int main()
 		return -1;
 	}
 
-	if (!Game_LoadAssets())
+	if (!Game_Init())
 	{
 		printf("ERROR::Failed to load game assets!\n");
 		return -1;
@@ -130,7 +161,7 @@ int main()
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-	GLFWwindow* window = glfwCreateWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "FPS_GAME", NULL, NULL);
+	window = glfwCreateWindow(WINDOW_WIDTH * WINDOW_SCALE, WINDOW_HEIGHT * WINDOW_SCALE, "FPS_GAME", NULL, NULL);
 
 	if (!window)
 	{
@@ -256,11 +287,12 @@ int main()
 	glDisable(GL_CULL_FACE);
 	glDisable(GL_BLEND);
 
-	glViewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
+	glViewport(0, 0, WINDOW_WIDTH * WINDOW_SCALE, WINDOW_HEIGHT * WINDOW_SCALE);
 
 	glBindTexture(GL_TEXTURE_2D, texture);
 
-	Render_Init(WINDOW_WIDTH, WINDOW_HEIGHT);
+	Render_Init(WINDOW_WIDTH * WINDOW_SCALE, WINDOW_HEIGHT * WINDOW_SCALE);
+	Render_SetRenderScale(WINDOW_SCALE);
 
 	float lastTime = 0;
 	float currentTime = 0;
@@ -284,19 +316,27 @@ int main()
 
 	s_engine.time_scale = 1;
 
-	Render_SetRenderScale(3);
+	//glfwMakeContextCurrent(NULL);
+
+	//DWORD thread_id = 0;
+//	HANDLE thread = CreateThread(NULL, 0, Render_ThreadLoop, NULL, 0, &thread_id);
+
 
 	//MAIN LOOP
 	while (!glfwWindowShouldClose(window))
 	{
+		if (Game_GetState() == GS__EXIT)
+		{
+			break;
+		}
+
 		currentTime = glfwGetTime();
 		s_engine.delta = currentTime - lastTime;
 		lastTime = currentTime;
 
 		//s_engine.delta *= s_engine.time_scale;
 
-		Player_Update(window, s_engine.delta);
-		Map_UpdateObjects(s_engine.delta);
+		Game_Update(s_engine.delta);
 
 		Player_GetView(&view_x, &view_y, &view_dir_x, &view_dir_y, &view_plane_x, &view_plane_y);
 
@@ -309,7 +349,7 @@ int main()
 	}
 
 	Map_Destruct();
-	Game_DestructAssets();
+	Game_Exit();
 
 	Render_ShutDown();
 	Sound_Shutdown();
