@@ -70,28 +70,6 @@ static bool Shader_checkCompileErrors(unsigned int p_object, const char* p_type)
 	return true;
 }
 
-static void Render_ThreadLoop()
-{
-	glfwMakeContextCurrent(window);
-
-	float view_x = 0;
-	float view_y = 0;
-	float view_dir_x = 0;
-	float view_dir_y = 0;
-	float view_plane_x = 0;
-	float view_plane_y = 0;
-
-	while (true)
-	{
-		Player_GetView(&view_x, &view_y, &view_dir_x, &view_dir_y, &view_plane_x, &view_plane_y);
-
-		Render_View(view_x, view_y, view_dir_x, view_dir_y, view_plane_x, view_plane_y);
-
-		glfwSwapBuffers(window);
-	}
-}
-
-
 static void MouseCallback(GLFWwindow* window, double x, double y)
 {
 	Player_MouseCallback(x, y);
@@ -299,28 +277,9 @@ int main()
 
 	GameAssets* assets = Game_GetAssets();
 
-	float view_x = 0;
-	float view_y = 0;
-	float view_dir_x = 0;
-	float view_dir_y = 0;
-	float view_plane_x = 0;
-	float view_plane_y = 0;
-
-	mat4 proj;
-	glm_ortho(0, 1280, 720, 0, -1, 1, proj);
-
-	unsigned id = glGetUniformLocation(shader_id, "u_proj");
-	glUniformMatrix4fv(id, 1, GL_FALSE, proj);
-
 	glfwSwapInterval(0);
 
 	s_engine.time_scale = 1;
-
-	//glfwMakeContextCurrent(NULL);
-
-	//DWORD thread_id = 0;
-//	HANDLE thread = CreateThread(NULL, 0, Render_ThreadLoop, NULL, 0, &thread_id);
-
 
 	//MAIN LOOP
 	while (!glfwWindowShouldClose(window))
@@ -337,22 +296,20 @@ int main()
 		//s_engine.delta *= s_engine.time_scale;
 
 		Game_Update(s_engine.delta);
+		
+		//Render_Loop(false);
 
-		Player_GetView(&view_x, &view_y, &view_dir_x, &view_dir_y, &view_plane_x, &view_plane_y);
-
-		Render_View(view_x, view_y, view_dir_x, view_dir_y, view_plane_x, view_plane_y);
-
-		glfwSwapBuffers(window);
+		//glfwSwapBuffers(window);
 		glfwPollEvents();
 
 		s_engine.ticks++;
 	}
 
-	Map_Destruct();
-	Game_Exit();
-
 	Render_ShutDown();
 	Sound_Shutdown();
+
+	Map_Destruct();
+	Game_Exit();
 
 	glfwDestroyWindow(window);
 	glfwTerminate();

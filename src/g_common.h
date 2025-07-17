@@ -19,6 +19,7 @@
 #define DOOR_CLOSE 2
 #define DOOR_AUTOCLOSE_TIME 5
 
+#define MIN_LIGHT 20
 
 typedef uint16_t TileID;
 typedef int16_t ObjectID;
@@ -74,6 +75,7 @@ bool Game_LoadAssets();
 void Game_DestructAssets();
 void Game_Update(float delta);
 void Game_Draw(Image* image, FontData* fd, float* depth_buffer, DrawSpan* draw_spans, float p_x, float p_y, float p_dirX, float p_dirY, float p_planeX, float p_planeY);
+void Game_DrawHud(Image* image, FontData* fd);
 void Game_SetState(GameState state);
 GameState Game_GetState();
 GameAssets* Game_GetAssets();
@@ -241,6 +243,8 @@ typedef struct
 	int player_spawn_point_y;
 
 	int level_index;
+
+	int num_non_empty_tiles;
 } Map;
 
 int Map_GetLevelIndex();
@@ -255,6 +259,7 @@ void Map_GetSize(int* r_width, int* r_height);
 void Map_GetSpawnPoint(int* r_x, int* r_y);
 bool Map_UpdateObjectTile(Object* obj);
 int Map_GetTotalTiles();
+int Map_GetTotalNonEmptyTiles();
 void Map_Draw(Image* image, Image* texture);
 void Map_DrawObjects(Image* image, float* depth_buffer, DrawSpan* draw_spans, float p_x, float p_y, float p_dirX, float p_dirY, float p_planeX, float p_planeY);
 void Map_UpdateObjects(float delta);
@@ -270,7 +275,7 @@ void Player_HandlePickup(Object* obj);
 void Player_Update(GLFWwindow* window, float delta);
 void Player_GetView(float* r_x, float* r_y, float* r_dirX, float* r_dirY, float* r_planeX, float* r_planeY);
 void Player_MouseCallback(float x, float y);
-void Player_Draw(Image* image, FontData* font, DrawSpan* draw_spans);
+void Player_Draw(Image* image, FontData* font);
 float Player_GetSensitivity();
 void Player_SetSensitivity(float sens);
 
@@ -299,7 +304,9 @@ void Gun_Shoot(Object* obj, float p_x, float p_y, float p_dirX, float p_dirY);
 //Object stuff
 void Object_Hurt(Object* obj, Object* src_obj, int damage);
 
+bool Object_IsSpecialCollidableTile(Object* obj);
 bool Object_CheckLineToTile(Object* obj, float target_x, float target_y);
+bool Object_CheckLineToTile2(Object* obj, float target_x, float target_y);
 bool Object_CheckLineToTarget(Object* obj, Object* target);
 bool Object_CheckSight(Object* obj, Object* target);
 Object* Object_Missile(Object* obj, Object* target);

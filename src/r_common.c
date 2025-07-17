@@ -616,7 +616,7 @@ void Sprite_UpdateAnimation(Sprite* sprite, float delta)
 		}
 	}
 
-	if (sprite->frame != old_frame)
+	if (sprite->frame != old_frame || !sprite->playing)
 	{
 		Render_RedrawSprites();
 	}

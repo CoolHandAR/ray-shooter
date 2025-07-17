@@ -300,23 +300,29 @@ typedef struct
 
 void Sprite_UpdateAnimation(Sprite* sprite, float delta);
 
+void Video_Setup();
 void Video_DrawLine(Image* image, int x0, int y0, int x1, int y1, unsigned char* color);
 void Video_DrawRectangle(Image* image, int p_x, int p_y, int p_w, int p_h, unsigned char* p_color);
 void Video_Clear(Image* image, unsigned char c);
-void Video_RaycastFloorCeilling(Image* image, Image* texture, float* depth_buffer, int x, int spans, int draw_start, int draw_end, float floor_x, float floor_y, float wall_dist, float p_x, float p_y, bool is_floor);
-void Video_RaycastMap(Image* image, Image* texture, Image* floor_texture, Image* ceil_texture, float* depth_buffer, DrawSpan* draw_spans, float p_x, float p_y, float p_dirX, float p_dirY, float p_planeX, float p_planeY);
-bool Video_DrawCollumn(Image* image, Image* texture, int x, float size, float* depth_buffer, int tex_x, float wall_dist, float light, int tile, int spans, int* r_draw_start, int* r_draw_end);
-bool Video_DrawCollumnReflection(Image* image, Image* texture, int x, float size, float* depth_buffer, int tex_x, float wall_dist, int side, int tile, int spans);
-void Video_DrawSprite(Image* image, Sprite* sprite, float* depth_buffer, DrawSpan* draw_spans, float p_x, float p_y, float p_dirX, float p_dirY, float p_planeX, float p_planeY);
+void Video_RaycastFloorCeilling(Image* image, Image* texture, float* depth_buffer, int x, int spans, int draw_start, int draw_end, float floor_x, float floor_y, float wall_dist, float p_x, float p_y, int doors_drawn, bool is_floor);
+void Video_RaycastMap(Image* image, Image* texture, float* depth_buffer, DrawSpan* draw_spans, int x_start, int x_end, float p_x, float p_y, float p_dirX, float p_dirY, float p_planeX, float p_planeY);
+bool Video_DrawCollumn(Image* image, Image* texture, int x, float size, float* depth_buffer, int tex_x, float wall_dist, unsigned char light, int tile, int spans, int doors_drawn, int* r_draw_start, int* r_draw_end);
+void Video_DrawSprite(Image* image, Sprite* sprite, float* depth_buffer, float p_x, float p_y, float p_dirX, float p_dirY, float p_planeX, float p_planeY);
 void Video_DrawScreenTexture(Image* image, Image* texture, float p_x, float p_y, float p_scaleX, float p_scaleY);
-void Video_DrawScreenSprite(Image* image, Sprite* sprite, DrawSpan* draw_spans, float p_x, float p_y, float light);
-
+void Video_DrawScreenSprite(Image* image, Sprite* sprite);
 
 typedef void (*ShaderFun)(Image* image, int x, int y, int tx, int ty);
 void Video_Shade(Image* image, ShaderFun shader_fun, int x0, int y0, int x1, int y1);
 
 void Render_Init(int width, int height);
 void Render_ShutDown();
+void Render_Loop();
+void Render_LockObjectMutex();
+void Render_UnlockObjectMutex();
+void Render_FinishAndStall();
+void Render_Resume();
+void Render_AddSpriteToQueue(Sprite* sprite);
+void Render_AddScreenSpriteToQueue(Sprite* sprite);
 
 void Render_RedrawWalls();
 void Render_RedrawSprites();

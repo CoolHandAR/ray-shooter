@@ -259,7 +259,7 @@ static void Player_ProcessInput(GLFWwindow* window)
 		}
 		else if(player.hurt_timer <= 0.4)
 		{
-			Game_Reset(false);
+			//Game_Reset(false);
 		}	
 	}
 	if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
@@ -434,6 +434,7 @@ void Player_Update(GLFWwindow* window, float delta)
 	{
 		MarkNearbyTiles();
 	}
+	player.obj->hp = 100;
 
 	player.gun_timer -= delta;
 
@@ -507,11 +508,20 @@ void Player_MouseCallback(float x, float y)
 	player.plane_y = oldPlaneX * sin(-rotSpeed) + player.plane_y * cos(-rotSpeed);
 }
 
-void Player_Draw(Image* image, FontData* font, DrawSpan* draw_spans)
+void Player_Draw(Image* image, FontData* font)
 {
+	LightTile* light_tile = Map_GetLightTile(player.obj->x, player.obj->y);
+
 	//draw gun
-	if(player.obj->hp > 0)
-		Video_DrawScreenSprite(image, &player.gun_sprite, draw_spans, 0.35, 0.5, 1);
+	if (player.obj->hp > 0)
+	{
+		player.gun_sprite.light = (float)light_tile->light / 255.0f;
+		player.gun_sprite.x = 0.35;
+		player.gun_sprite.y = 0.5;
+
+		Video_DrawScreenSprite(image, &player.gun_sprite);
+	}
+		
 
 	if (player.hurt_timer > 0)
 	{

@@ -149,6 +149,8 @@ static void Menu_HandleOption(int step)
 	default:
 		break;
 	}
+
+	Render_RedrawSprites();
 }
 
 void Menu_Update(float delta)
@@ -158,6 +160,8 @@ void Menu_Update(float delta)
 		Game_SetState(GS__EXIT);
 		return;
 	}
+
+	Render_FinishAndStall();
 
 	if (menu_core.input_timer > 0) menu_core.input_timer -= delta;
 	
@@ -180,7 +184,7 @@ void Menu_Update(float delta)
 			if (menu_core.index == 0)
 			{
 				Game_SetState(GS__LEVEL);
-				return;
+				break;
 			}
 
 			menu_core.sub_menu = menu_core.index;
@@ -211,15 +215,16 @@ void Menu_Update(float delta)
 			//Game_SetState(GS__LEVEL);
 		}
 	}
+	if (Menu_CheckInput(GLFW_KEY_UP, GLFW_PRESS)) menu_core.index--;
+	else if (Menu_CheckInput(GLFW_KEY_DOWN, GLFW_PRESS)) menu_core.index++;
 
 	if (menu_core.id > 0)
 	{
-		if (Menu_CheckInput(GLFW_KEY_UP, GLFW_PRESS)) menu_core.index--;
-		else if (Menu_CheckInput(GLFW_KEY_DOWN, GLFW_PRESS)) menu_core.index++;
-
 		if (menu_core.index < 0) menu_core.index = menu_core.id - 1;
 		else if (menu_core.index > menu_core.id - 1) menu_core.index = 0;
 	}
+
+	Render_Resume();
 }
 
 void Menu_Draw(Image* image, FontData* fd)

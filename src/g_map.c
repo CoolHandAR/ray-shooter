@@ -6,6 +6,8 @@
 #include <assert.h>
 #include <math.h>
 #include <cjson/cJSON.h>
+#include <cglm/cglm.h>
+#include "u_math.h"
 
 #include "utility.h"
 
@@ -110,8 +112,84 @@ static void Map_ConnectTriggersToTargets()
 		}
 	}
 }
-#include <cglm/cglm.h>
-#include "u_math.h"
+
+static int Map_CalculateLight(int light_x, int light_y, int tile_x, int tile_y, float linear, float quadratic, float scale)
+{
+	if (light_x < 0) light_x = 0; else if (light_x >= s_map.width) light_x = s_map.width - 1;
+	if (light_y < 0) light_y = 0; else if (light_y >= s_map.height) light_y = s_map.height - 1;
+
+	int dir_x = light_x - tile_x;
+	int dir_y = light_y - tile_y;
+
+	float norm_dir_x = dir_x;
+	float norm_dir_y = dir_y;
+
+	Math_XY_Normalize(&norm_dir_x, &norm_dir_y);
+
+	DirEnum dir = DirVectorToDirEnum(dir_x, dir_y);
+
+	float light_linear = linear;
+	float light_quadratic = quadratic;
+
+	float distance = Math_XY_Length(tile_x - light_x, tile_y - light_y);
+	float attenuation = 1.0 / (1.0 + light_linear * distance + light_quadratic * distance * distance);
+
+	int index = light_x + light_y * s_map.width;
+	LightTile* light_tile = &s_map.light_tiles[index];
+
+	attenuation *= scale;
+
+	int light = attenuation * 255;
+
+	if (light > 255)
+	{
+		light = 255;
+	}
+	else if (light < 0)
+	{
+		light = 0;
+	}
+
+	if (dir == DIR_NORTH || dir == DIR_NORTH_EAST || dir == DIR_NORTH_WEST)
+	{
+		int l = light + (int)light_tile->light_north;
+
+		if (l > 255) l = 255;
+
+		light_tile->light_north = (uint8_t)l;
+	}
+	if (dir == DIR_SOUTH || dir == DIR_SOUTH_EAST || dir == DIR_SOUTH_WEST)
+	{
+		int l = light + (int)light_tile->light_south;
+
+		if (l > 255) l = 255;
+
+		light_tile->light_south = (uint8_t)l;
+	}
+	if (dir == DIR_WEST || dir == DIR_SOUTH_WEST || dir == DIR_NORTH_WEST)
+	{
+		int l = light + (int)light_tile->light_west;
+
+		if (l > 255) l = 255;
+
+		light_tile->light_west = (uint8_t)l;
+	}
+	if (dir == DIR_EAST || dir == DIR_SOUTH_EAST || dir == DIR_NORTH_EAST)
+	{
+		int l = light + (int)light_tile->light_east;
+
+		if (l > 255) l = 255;
+
+		light_tile->light_east = (uint8_t)l;
+	}
+
+	int l = light + (int)light_tile->light;
+
+	if (l > 255) l = 255;
+
+	light_tile->light = (uint8_t)l;
+}
+
 static void Map_SetupLightTiles()
 {
 	s_map.light_tiles = malloc(sizeof(LightTile) * s_map.width * s_map.height);
@@ -122,6 +200,22 @@ static void Map_SetupLightTiles()
 	}
 
 	memset(s_map.light_tiles, 0, sizeof(LightTile) * s_map.width * s_map.height);
+
+	//set min light
+	for (int x = 0; x < s_map.width; x++)
+	{
+		for (int y = 0; y < s_map.height; y++)
+		{
+			int index = x + y * s_map.width;
+			LightTile* light_tile = &s_map.light_tiles[index];
+
+			light_tile->light = MIN_LIGHT;
+			light_tile->light_east = MIN_LIGHT;
+			light_tile->light_west = MIN_LIGHT;
+			light_tile->light_north = MIN_LIGHT;
+			light_tile->light_south = MIN_LIGHT;
+		}
+	}
 
 	for (int i = 0; i < s_map.num_objects; i++)
 	{
@@ -135,115 +229,46 @@ static void Map_SetupLightTiles()
 		int tile_x = (int)object->x;
 		int tile_y = (int)object->y;
 
-		for (int x = -6; x <= 6; x++)
+		int light_size = 6;
+
+		for (int x = -light_size; x <= light_size; x++)
 		{
-			for (int y = -6; y <= 6; y++)
+			for (int y = -light_size; y <= light_size; y++)
 			{
 				int light_x = tile_x + x;
 				int light_y = tile_y + y;
 				if (light_x < 0) light_x = 0; else if (light_x >= s_map.width) light_x = s_map.width - 1;
 				if (light_y < 0) light_y = 0; else if (light_y >= s_map.height) light_y = s_map.height - 1;
 
-				//check for blocking tiles, add a small bias so we won't check the exact tile that is blocking
-				int check_sign_x = (x >= 0) ? -1 : 1;
-				int check_sign_y = (y >= 0) ? -1 : 1;
-				
-				if (!Object_CheckLineToTile(object, light_x + check_sign_x, light_y + check_sign_y))
-				{
-					continue;
-				}
-
 				int dir_x = light_x - tile_x;
 				int dir_y = light_y - tile_y;
 
-				float norm_dir_x = dir_x;
-				float norm_dir_y = dir_y;
+				//check for blocking tiles, add a small bias so we won't check the exact tile that is blocking
+				int check_sign_x = 0;
+				int check_sign_y = 0;
 
-				Math_XY_Normalize(&norm_dir_x, &norm_dir_y);
+				if (dir_x != 0)
+				{
+					check_sign_x = (dir_x > 0) ? 1 : -1;
+				}
+				if (dir_y != 0)
+				{
+					check_sign_y = (dir_y > 0) ? 1 : -1;
+				}
 				
-				DirEnum dir = DirVectorToDirEnum(dir_x, dir_y);
-
-				if (Map_GetTile(light_x, light_y) != EMPTY_TILE)
+				if (!Object_CheckLineToTile2(object, light_x, light_y))
 				{
-					float normal_x = 0;
-					float normal_y = 0;
-
-					if (light_x > tile_x)
-					{
-						normal_x = 1;
-					}
-					else if(light_x < tile_x)
-					{
-						normal_x = -1;
-					}
-					if (light_y > tile_y)
-					{
-						normal_y = 1;
-					}
-					else if(light_y < tile_y)
-					{
-						normal_y = -1;
-					}
-
-					float bounce_x = 0;
-					float bounce_y = 0;
-
-					Math_XY_Bounce(norm_dir_x, norm_dir_y, normal_x, normal_y, &bounce_x, &bounce_y);
-					
-					bounce_x = roundf(bounce_x);
-					bounce_y = roundf(bounce_y);
-
-					int bounce_tile_x = light_x + (int)bounce_x;
-					int bounce_tile_y = light_y + (int)bounce_y;
-
-					if (bounce_tile_x < 0) bounce_tile_x = 0; else if (bounce_tile_x >= s_map.width) bounce_tile_x = s_map.width - 1;
-					if (bounce_tile_y < 0) bounce_tile_y = 0; else if (bounce_tile_y >= s_map.height) bounce_tile_y = s_map.height - 1;
-
-					int index = bounce_tile_x + bounce_tile_y * s_map.width;
-
-					LightTile* light_tile = &s_map.light_tiles[index];
-					//light_tile->light = 255;
-					//light_tile->dir_to_light = (uint8_t)dir;
+					continue;
 				}
-
-				float light_linear = 0.02;
-				float light_quadratic = 0.08;
-
-				float distance = Math_XY_Length(tile_x - light_x, tile_y - light_y);
-				float attenuation = 1.0 / (1.0 + light_linear * distance + light_quadratic * distance * distance);
-
-				int index = light_x + light_y * s_map.width;
-				LightTile* light_tile = &s_map.light_tiles[index];
-
-				int light = attenuation * 255;
 				
-				if (light > 255)
+				float scale = 1;
+
+				if (!Object_CheckLineToTile(object, light_x, light_y))
 				{
-					light = 255;
-				}
-				else if (light < 0) 
-				{
-					light = 0;
+					scale *= 0.5;
 				}
 
-				if (dir == DIR_NORTH || dir == DIR_NORTH_EAST || dir == DIR_NORTH_WEST)
-				{
-					light_tile->light_north = (uint8_t)light;
-				}
-				if (dir == DIR_SOUTH || dir == DIR_SOUTH_EAST || dir == DIR_SOUTH_WEST)
-				{
-					light_tile->light_south = (uint8_t)light;
-				}
-				if (dir == DIR_WEST || dir == DIR_SOUTH_WEST || dir == DIR_NORTH_WEST)
-				{
-					light_tile->light_west = (uint8_t)light;
-				}
-				 if (dir == DIR_EAST || dir == DIR_SOUTH_EAST || dir == DIR_NORTH_EAST)
-				{
-					light_tile->light_east = (uint8_t)light;
-				}
-
-				light_tile->light = (uint8_t)light;
+				Map_CalculateLight(light_x, light_y, tile_x, tile_y, 0.02, 0.08, scale);
 			}
 		}
 	}
@@ -423,6 +448,11 @@ bool Map_Load(const char* filename)
 
 					int tile_number = cJSON_GetNumberValue(tile);
 
+					if (tile_number > 0)
+					{
+						s_map.num_non_empty_tiles++;
+					}
+
 					s_map.tiles[x + y * s_map.width] = tile_number;
 
 					index++;
@@ -487,9 +517,13 @@ bool Map_Load(const char* filename)
 
 				Object* map_object = NULL;
 
+				bool is_tile_centered = false;
+
 				if (!strcmp(type_value, "light"))
 				{
 					map_object = Object_Spawn(OT__LIGHT, 0, obj_x, obj_y);
+
+					//is_tile_centered = true;
 				}
 				else if (!strcmp(type_value, "barrel"))
 				{
@@ -525,7 +559,7 @@ bool Map_Load(const char* filename)
 					{
 						map_object = Object_Spawn(OT__TRIGGER, SUB__TRIGGER_SWITCH, obj_x, obj_y);
 
-						map_object->y -= 1;
+						is_tile_centered = true;
 
 						cJSON* gid = cJSON_GetObjectItem(object, "gid");
 
@@ -533,8 +567,6 @@ bool Map_Load(const char* filename)
 						{
 							map_object->state = cJSON_GetNumberValue(gid);
 						}
-
-						//map_object->y -= 1;
 					}
 					else
 					{
@@ -543,7 +575,7 @@ bool Map_Load(const char* filename)
 
 					if (map_object)
 					{
-						//map_object->y -= 1;
+						is_tile_centered = true;
 
 						cJSON* props = cJSON_GetObjectItem(object, "properties");
 
@@ -586,10 +618,7 @@ bool Map_Load(const char* filename)
 				{
 					map_object = Object_Spawn(OT__DOOR, SUB__DOOR_VERTICAL, obj_x, obj_y);
 
-					if (map_object)
-					{
-						map_object->y -= 1;
-					}
+					is_tile_centered = true;
 				}
 				else if (!strcmp(type_value, "tile_fake"))
 				{
@@ -597,7 +626,7 @@ bool Map_Load(const char* filename)
 
 					if (map_object)
 					{
-						map_object->y -= 1;
+						is_tile_centered = true;
 
 						cJSON* gid = cJSON_GetObjectItem(object, "gid");
 
@@ -612,6 +641,11 @@ bool Map_Load(const char* filename)
 				if (map_object)
 				{
 					map_object->map_id = map_id;
+
+					if (is_tile_centered)
+					{
+						map_object->y -= 1;
+					}
 				}
 			}
 		
@@ -888,6 +922,11 @@ int Map_GetTotalTiles()
 	return s_map.width * s_map.height;
 }
 
+int Map_GetTotalNonEmptyTiles()
+{
+	return s_map.num_non_empty_tiles;
+}
+
 void Map_Draw(Image* image, Image* texture)
 {
 	const int rect_width = (image->width / s_map.width);
@@ -955,17 +994,18 @@ void Map_DrawObjects(Image* image, float* depth_buffer, DrawSpan* draw_spans, fl
 		sprite->dist = (p_x - sprite->x) * (p_x - sprite->x) + (p_y - sprite->y) * (p_y - sprite->y);
 
 		s_spritePointers[num_sprites++] = &object->sprite;
+
+		Render_AddSpriteToQueue(sprite);
 	}
 
 	//sort by distance
-	qsort(s_spritePointers, num_sprites, sizeof(Sprite*), CompareSpriteDistances);
+	//qsort(s_spritePointers, num_sprites, sizeof(Sprite*), CompareSpriteDistances);
 
 	//draw all sprites
 	for (int i = 0; i < num_sprites; i++)
 	{
-		Video_DrawSprite(image, s_spritePointers[i], depth_buffer, draw_spans, p_x, p_y, p_dirX, p_dirY, p_planeX, p_planeY);
+		//Video_DrawSprite(image, s_spritePointers[i], depth_buffer, draw_spans, p_x, p_y, p_dirX, p_dirY, p_planeX, p_planeY);
 	}
-
 }
 
 void Map_UpdateObjects(float delta)
@@ -1069,6 +1109,10 @@ void Map_UpdateObjects(float delta)
 
 void Map_DeleteObject(Object* obj)
 {
+	//Render_FinishAndStall();
+
+	Render_LockObjectMutex();
+
 	ObjectID id = obj->id;
 
 	assert(id < MAX_OBJECTS);
@@ -1089,6 +1133,10 @@ void Map_DeleteObject(Object* obj)
 
 	//update sorted list
 	Map_UpdateSortedList();
+
+	Render_UnlockObjectMutex();
+
+	//Render_Resume();
 }
 
 void Map_Destruct()

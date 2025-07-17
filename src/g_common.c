@@ -179,8 +179,30 @@ void Game_Draw(Image* image, FontData* fd, float* depth_buffer, DrawSpan* draw_s
 		//sort and draw map objects
 		Map_DrawObjects(image, depth_buffer, draw_spans, p_x, p_y, p_dirX, p_dirY, p_planeX, p_planeY);
 
+		break;
+	}
+	case GS__LEVEL_END:
+	{
+		Menu_LevelEnd_Draw(image, fd);
+		break;
+	}
+	default:
+		break;
+	}
+}
+
+void Game_DrawHud(Image* image, FontData* fd)
+{
+	switch (game.state)
+	{
+	case GS__MENU:
+	{
+		break;
+	}
+	case GS__LEVEL:
+	{
 		//draw player stuff (gun and hud)
-		Player_Draw(image, fd, draw_spans);
+		Player_Draw(image, fd);
 
 		if (game.secret_timer > 0)
 		{
@@ -191,7 +213,6 @@ void Game_Draw(Image* image, FontData* fd, float* depth_buffer, DrawSpan* draw_s
 	}
 	case GS__LEVEL_END:
 	{
-		Menu_LevelEnd_Draw(image, fd);
 		break;
 	}
 	default:
@@ -222,6 +243,9 @@ GameAssets* Game_GetAssets()
 
 void Game_ChangeLevel()
 {
+	//stall render threads
+	Render_FinishAndStall();
+
 	game.prev_total_monsters = game.total_monsters;
 	game.prev_total_secrets = game.total_secrets;
 	game.prev_secrets_found = game.secrets_found;
@@ -247,6 +271,12 @@ void Game_ChangeLevel()
 	Player_Init();
 
 	Game_SetState(GS__LEVEL_END);
+
+	Render_RedrawWalls();
+	Render_RedrawSprites();
+
+	//resume
+	Render_Resume();
 }
 
 void Game_Reset(bool to_start)
@@ -995,6 +1025,34 @@ void Object_Hurt(Object* obj, Object* src_obj, int damage)
 	}
 }
 
+bool Object_IsSpecialCollidableTile(Object* obj)
+{
+	//check for closed doors
+	if (obj->type == OT__DOOR)
+	{
+		//door is more than halfway closed
+		if (obj->move_timer >= 0.5)
+		{
+			return true;
+		}
+	}
+	//check for special tiles
+	else if (obj->type == OT__SPECIAL_TILE)
+	{
+
+	}
+	//check for special triggers
+	else if (obj->type == OT__TRIGGER)
+	{
+		if (obj->sub_type == SUB__TRIGGER_SWITCH)
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
 bool Object_CheckLineToTile(Object* obj, float target_x, float target_y)
 {
 	const int max_tiles = Map_GetTotalTiles();
@@ -1075,13 +1133,11 @@ bool Object_CheckLineToTile(Object* obj, float target_x, float target_y)
 				map_y += step_y;
 			}
 		}
-		else
+
+		//we have reached the target
+		if (map_x == target_tile_x && map_y == target_tile_y)
 		{
-			//we have reached the target
-			if (map_x == target_tile_x && map_y == target_tile_y)
-			{
-				break;
-			}
+			break;
 		}
 
 		//tile blocks the line
@@ -1098,27 +1154,125 @@ bool Object_CheckLineToTile(Object* obj, float target_x, float target_y)
 			continue;
 		}
 
-		//check for closed doors
-		if (tile_obj->type == OT__DOOR)
+		//tile blocks the line
+		if (Object_IsSpecialCollidableTile(tile_obj))
 		{
-			//door is more than halfway closed
-			if (tile_obj->move_timer >= 0.5)
-			{
-				return false;
-			}
+			return false;
 		}
-		//check for special tiles
-		else if (tile_obj->type == OT__SPECIAL_TILE)
-		{
+	}
 
-		}
-		//check for special triggers
-		else if (tile_obj->type == OT__TRIGGER)
+	return true;
+}
+
+bool Object_CheckLineToTile2(Object* obj, float target_x, float target_y)
+{
+	const int max_tiles = Map_GetTotalTiles();
+
+	float x_point = obj->x - target_x;
+	float y_point = obj->y - target_y;
+
+	float ray_dir_x = x_point;
+	float ray_dir_y = y_point;
+
+	//length of ray from one x or y-side to next x or y-side
+	float delta_dist_x = (ray_dir_x == 0) ? 1e30 : fabs(1.0 / ray_dir_x);
+	float delta_dist_y = (ray_dir_y == 0) ? 1e30 : fabs(1.0 / ray_dir_y);
+
+	int map_x = (int)obj->x;
+	int map_y = (int)obj->y;
+
+	int target_tile_x = (int)target_x;
+	int target_tile_y = (int)target_y;
+
+	//we have already reached the target
+	if (map_x == target_tile_x && map_y == target_tile_y)
+	{
+		return true;
+	}
+
+	//length of ray from current position to next x or y-side
+	float side_dist_x = 0;
+	float side_dist_y = 0;
+
+	int step_x = 0;
+	int step_y = 0;
+
+	if (x_point > 0)
+	{
+		step_x = -1;
+		side_dist_x = (obj->x - map_x) * delta_dist_x;
+	}
+	else if(x_point < 0)
+	{
+		step_x = 1;
+		side_dist_x = (map_x + 1.0 - obj->x) * delta_dist_x;
+	}
+	if (y_point > 0)
+	{
+		step_y = -1;
+		side_dist_y = (obj->y - map_y) * delta_dist_y;
+	}
+	else if(y_point < 0)
+	{
+		step_y = 1;
+		side_dist_y = (map_y + 1.0 - obj->y) * delta_dist_y;
+	}
+
+	if (abs(x_point) > 0)
+	{
+		int x = map_x;
+		float y = map_y;
+
+		y += step_y * delta_dist_x;
+		x += step_x;
+
+		while (x != target_tile_x)
 		{
-			if (tile_obj->sub_type == SUB__TRIGGER_SWITCH)
+			if (Map_GetTile(x, y) != EMPTY_TILE)
 			{
 				return false;
 			}
+
+			Object* tile_obj = Map_GetObjectAtTile(x, y);
+
+			if (tile_obj)
+			{
+				if (Object_IsSpecialCollidableTile(tile_obj))
+				{
+					return false;
+				}
+			}
+
+			y += step_y * delta_dist_x;
+			x += step_x;
+		}
+	}
+	if (abs(y_point) > 0)
+	{
+		float x = map_x;
+		int y = map_y;
+
+		x += step_x * delta_dist_y;
+		y += step_y;
+
+		while (y != target_tile_y)
+		{		
+			if (Map_GetTile(x, y) != EMPTY_TILE)
+			{
+				return false;
+			}
+			Object* tile_obj = Map_GetObjectAtTile(x, y);
+
+			if (tile_obj)
+			{
+				if (Object_IsSpecialCollidableTile(tile_obj))
+				{
+					return false;
+				}
+			}
+
+			x += step_x * delta_dist_y;
+			y += step_y;
 		}
 	}
 
@@ -1517,6 +1671,9 @@ Object* Object_Spawn(ObjectType type, SubType sub_type, float x, float y)
 	case OT__LIGHT:
 	{
 		obj->sprite.img = &assets.decoration_textures;
+
+		obj->sprite.offset_x = 0.5;
+		obj->sprite.offset_y = 0.5;
 		break;
 	}
 	case OT__THING:
