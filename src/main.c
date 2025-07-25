@@ -1,12 +1,8 @@
-
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image/stb_image.h>
-
-#define DYNAMIC_ARRAY_IMPLEMENTATION
-#include "dynamic_array.h"
 
 #include "u_math.h"
 
@@ -29,16 +25,50 @@
 
 #define WINDOW_WIDTH 640
 #define WINDOW_HEIGHT 360
+#define WINDOW_NAME "FPS_GAME"
 
 typedef struct
 {
 	float time_scale;
 	float delta;
 	uint64_t ticks;
+	GLFWwindow* window;
 } EngineData;
 
-GLFWwindow* window;
 static EngineData s_engine;
+
+static const char* VERTEX_SHADER_SOURCE[] =
+{
+	"#version 330 core \n"
+
+	"layout(location = 0) in vec3 a_Pos;\n"
+	"layout(location = 1) in vec2 a_texCoords;\n"
+
+	"out vec2 TexCoords;\n"
+
+	"void main()\n"
+	"{\n"
+		"TexCoords = a_texCoords;\n"
+		"gl_Position = vec4(a_Pos.x, -a_Pos.y, 1.0, 1.0);\n"
+	"}\n"
+};
+static const char* FRAGMENT_SHADER_SOURCE[] =
+{
+	"#version 330 core \n"
+
+	"out vec4 FragColor;\n"
+
+	"in vec2 TexCoords;\n"
+
+	"uniform sampler2D scene_texture;\n"
+
+	"void main()\n"
+	"{\n"
+		"vec4 TexColor = texture(scene_texture, TexCoords);\n"
+
+		"FragColor = TexColor;\n"
+	"}\n"
+};
 
 extern void Render_WindowCallback(GLFWwindow* window, int width, int height);
 
@@ -100,7 +130,7 @@ void Engine_SetTimeScale(float scale)
 
 GLFWwindow* Engine_GetWindow()
 {
-	return window;
+	return s_engine.window;
 }
 
 int main()
@@ -113,19 +143,25 @@ int main()
 		return -1;
 	}
 
+	printf("Sound loaded \n");
+
 	if (!Game_Init())
 	{
 		printf("ERROR::Failed to load game assets!\n");
 		return -1;
 	}
 
-	if(!Map_Load("test.json"))
+	printf("Game loaded \n");
+
+	if(!Map_Load("test2.json"))
 	{
 		printf("ERROR:: Failed to load map !\n");
 		return -1;
 	}
 
-	Player_Init();
+	printf("Map loaded \n");
+
+	Player_Init(false);
 
 	srand(time(NULL));
 
@@ -135,23 +171,26 @@ int main()
 		printf("Failed to load glfw!");
 		return -1;
 	}
+
+	printf("Glfw loaded \n");
 	
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-	window = glfwCreateWindow(WINDOW_WIDTH * WINDOW_SCALE, WINDOW_HEIGHT * WINDOW_SCALE, "FPS_GAME", NULL, NULL);
+	s_engine.window = glfwCreateWindow(WINDOW_WIDTH * WINDOW_SCALE, WINDOW_HEIGHT * WINDOW_SCALE, WINDOW_NAME, NULL, NULL);
 
-	if (!window)
+	if (!s_engine.window)
 	{
 		printf("Failed to create window!");
 		glfwTerminate();
 		return -1;
 	}
+	printf("Window created \n");
 
-	glfwMakeContextCurrent(window);
-	glfwSetWindowSizeCallback(window, Render_WindowCallback);
-	glfwSetCursorPosCallback(window, MouseCallback);
-	glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+	glfwMakeContextCurrent(s_engine.window);
+	glfwSetWindowSizeCallback(s_engine.window, Render_WindowCallback);
+	glfwSetCursorPosCallback(s_engine.window, MouseCallback);
+	glfwSetInputMode(s_engine.window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
 	//load glad
 	if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
@@ -169,30 +208,10 @@ int main()
 	unsigned shader_id = 0;
 
 	//setup shaders
-	char* vert_src = NULL;
-	char* frag_src = NULL;
-
-	vert_src = File_Parse("shader.vert", NULL);
-
-	if (!vert_src)
-	{
-		printf("Failed to load vertex shader");
-		return -1;
-	}
-
-	frag_src = File_Parse("shader.frag", NULL);
-
-	if (!frag_src)
-	{
-		free(vert_src);
-		printf("Failed to load fragment shader");
-		return -1;
-	}
-
 	{
 		GLuint vertex_id, frag_id;
 		vertex_id = glCreateShader(GL_VERTEX_SHADER);
-		glShaderSource(vertex_id, 1, &vert_src, NULL);
+		glShaderSource(vertex_id, 1, &VERTEX_SHADER_SOURCE, NULL);
 		glCompileShader(vertex_id);
 
 		if (!Shader_checkCompileErrors(vertex_id, "Vertex"))
@@ -200,7 +219,7 @@ int main()
 			return -1;
 		}
 		frag_id = glCreateShader(GL_FRAGMENT_SHADER);
-		glShaderSource(frag_id, 1, &frag_src, NULL);
+		glShaderSource(frag_id, 1, &FRAGMENT_SHADER_SOURCE, NULL);
 		glCompileShader(frag_id);
 
 		if (!Shader_checkCompileErrors(frag_id, "Fragment"))
@@ -218,9 +237,6 @@ int main()
 
 		glDeleteShader(vertex_id);
 		glDeleteShader(frag_id);
-
-		free(vert_src);
-		free(frag_src);
 	}
 
 	//setup main screen texture
@@ -269,20 +285,30 @@ int main()
 
 	glBindTexture(GL_TEXTURE_2D, texture);
 
-	Render_Init(WINDOW_WIDTH * WINDOW_SCALE, WINDOW_HEIGHT * WINDOW_SCALE);
+	glfwSwapInterval(0);
+
+	if (!Render_Init(WINDOW_WIDTH * WINDOW_SCALE, WINDOW_HEIGHT * WINDOW_SCALE))
+	{
+		printf("Failed to load renderer!\n");
+		return false;
+	}
+
 	Render_SetRenderScale(WINDOW_SCALE);
+
+	printf("Renderer Loaded\n");
 
 	float lastTime = 0;
 	float currentTime = 0;
 
 	GameAssets* assets = Game_GetAssets();
 
-	glfwSwapInterval(0);
+	s_engine.time_scale = 1.0;
 
-	s_engine.time_scale = 1;
+	Player_SetSensitivity(1);
+	Sound_setMasterVolume(0.2);
 
 	//MAIN LOOP
-	while (!glfwWindowShouldClose(window))
+	while (!glfwWindowShouldClose(s_engine.window))
 	{
 		if (Game_GetState() == GS__EXIT)
 		{
@@ -293,17 +319,16 @@ int main()
 		s_engine.delta = currentTime - lastTime;
 		lastTime = currentTime;
 
-		//s_engine.delta *= s_engine.time_scale;
+		s_engine.delta *= s_engine.time_scale;
 
 		Game_Update(s_engine.delta);
 		
-		//Render_Loop(false);
-
-		//glfwSwapBuffers(window);
 		glfwPollEvents();
 
 		s_engine.ticks++;
 	}
+
+	printf("Shutting down...\n");
 
 	Render_ShutDown();
 	Sound_Shutdown();
@@ -311,7 +336,7 @@ int main()
 	Map_Destruct();
 	Game_Exit();
 
-	glfwDestroyWindow(window);
+	glfwDestroyWindow(s_engine.window);
 	glfwTerminate();
 
 	return 0;

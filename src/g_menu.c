@@ -1,6 +1,7 @@
 #include "g_common.h"
 
 #include "main.h"
+#include "sound.h"
 
 #define SUB_MENU_MAIN 0
 #define SUB_MENU_OPTIONS 1
@@ -10,7 +11,7 @@
 #define INPUT_COOLDOWN 0.25
 
 #define X_TEXT_START 0.25
-#define Y_TEXT_START 0.1
+#define Y_TEXT_START 0.15
 #define Y_TEXT_STEP 0.25
 
 #define X_HELPTEXT_START 0.1
@@ -19,10 +20,12 @@
 #define Y_HELPTEXT_STEP 0.15
 
 #define RENDERSCALE_ID 0
-#define SENSITIVITY_ID 1
-#define BACK_ID 2
+#define SOUND_ID 1
+#define SENSITIVITY_ID 2
+#define BACK_ID 3
 
 #define SENS_OPTION_STEP 0.5
+#define SOUND_OPTION_STEP 0.1
 #define LEVEL_END_COUNTER_SPEED 10
 
 typedef struct
@@ -132,6 +135,13 @@ static void Menu_HandleOption(int step)
 
 		break;
 	}
+	case SOUND_ID:
+	{
+		if (step != 0)
+			Sound_setMasterVolume(Sound_GetMasterVolume() + (SOUND_OPTION_STEP * step));
+
+		break;
+	}
 	case SENSITIVITY_ID:
 	{
 		if(step != 0)
@@ -215,11 +225,12 @@ void Menu_Update(float delta)
 			//Game_SetState(GS__LEVEL);
 		}
 	}
-	if (Menu_CheckInput(GLFW_KEY_UP, GLFW_PRESS)) menu_core.index--;
-	else if (Menu_CheckInput(GLFW_KEY_DOWN, GLFW_PRESS)) menu_core.index++;
-
+	
 	if (menu_core.id > 0)
 	{
+		if (Menu_CheckInput(GLFW_KEY_UP, GLFW_PRESS)) menu_core.index--;
+		else if (Menu_CheckInput(GLFW_KEY_DOWN, GLFW_PRESS)) menu_core.index++;
+
 		if (menu_core.index < 0) menu_core.index = menu_core.id - 1;
 		else if (menu_core.index > menu_core.id - 1) menu_core.index = 0;
 	}
@@ -248,6 +259,7 @@ void Menu_Draw(Image* image, FontData* fd)
 	case SUB_MENU_OPTIONS:
 	{
 		Menu_Text(image, fd, RENDERSCALE_ID, "RENDER SCALE  < %i > ", Render_GetRenderScale());
+		Menu_Text(image, fd, SOUND_ID, "VOLUME  < %.1f > ", Sound_GetMasterVolume());
 		Menu_Text(image, fd, SENSITIVITY_ID, "SENSITIVITY  < %.1f > ", Player_GetSensitivity());
 
 		Menu_Text(image, fd, BACK_ID, "BACK");
@@ -264,6 +276,10 @@ void Menu_Draw(Image* image, FontData* fd)
 		Menu_HelpText(image, fd, true, "INTERACT = E");
 		Menu_HelpText(image, fd, true, "SLOW WALK = SHIFT");
 		Menu_HelpText(image, fd, true, "MENU = ESC");
+
+		Menu_HelpText(image, fd, true, "1 = PISTOL");
+		Menu_HelpText(image, fd, false, "2 = SHOTGUN");
+		Menu_HelpText(image, fd, false, "3 = MACHINE GUN");
 
 		break;
 	}

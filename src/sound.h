@@ -21,6 +21,7 @@ void Sound_DeleteSound(int id);
 bool Sound_load(const char* p_filePath, unsigned p_flags, ma_sound* r_sound);
 bool Sound_createGroup(unsigned p_flags, ma_sound_group* r_group);
 void Sound_setMasterVolume(float volume);
+float Sound_GetMasterVolume();
 int Sound_Preload(int type);
 void Sound_Emit(int type);
 void Sound_EmitWorldTemp(int type, float x, float y, float dir_x, float dir_y);

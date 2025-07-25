@@ -9,15 +9,13 @@
 #include "main.h"
 #include "u_math.h"
 
+#define PLAYER_MAX_HP 100
+#define PLAYER_MAX_AMMO 100
+#define PLAYER_OVERHEAL_HP_TICK_TIME 0.25
 #define PLAYER_SPEED 10
 #define MOUSE_SENS_DIVISOR 1000
 #define MIN_SENS 0.5
 #define MAX_SENS 16
-
-typedef struct
-{
-	int ammo;
-} GunData;
 
 typedef struct
 {
@@ -27,73 +25,33 @@ typedef struct
 	int move_x;
 	int move_y;
 	int slow_move;
-	float gun_timer;
-	float hurt_timer;
 	int gun_sound_id;
 
-	int hurt_dir_x;
-	int hurt_dir_y;
+	int buck_ammo;
+	int bullet_ammo;
+	int rocket_ammo;
 
-	int ammo;
+	float gun_timer;
+	float hurt_timer;
+	float godmode_timer;
+	float quad_timer;
+	float hp_tick_timer;
+
+	float bob;
+	float gun_offset_x;
+	float gun_offset_y;
+
+	GunType gun;
+	GunInfo* gun_info;
+
+	bool gun_check[GUN__MAX];
+	Sprite gun_sprites[GUN__MAX];
 
 	float sensitivity;
-
-	GunData guns[GUN__MAX];
-
-	bool* visited_tiles;
 } PlayerData;
 
 static PlayerData player;
 
-static void Player_ShootGun()
-{
-	if (player.gun_timer > 0)
-	{
-		return;
-	}
-	if (player.ammo <= 0)
-	{
-		return;
-	}
-	if (player.obj->hp <= 0)
-	{
-		return;
-	}
-
-	float spread = 3;
-	for (int i = 0; i < 8; i++)
-	{
-		float randomf = Math_randf();
-
-		randomf = Math_Clamp(randomf, 0.0, 0.25);
-
-		if (rand() % 100 > 50)
-		{
-			randomf = -randomf;
-		}
-
-		
-		
-		Gun_Shoot(player.obj, player.obj->x, player.obj->y, player.obj->dir_x + randomf, player.obj->dir_y + randomf);
-	}
-
-	//Object_Spawn(OT__PARTICLE, SUB__PARTICLE_BLOOD, player.obj->x, player.obj->y);
-
-	player.ammo--;
-
-	player.gun_sprite.playing = true;
-	player.gun_sprite.frame = 1;
-	player.gun_timer = 1.35;
-
-	//Sound_EmitWorldTemp(SOUND__SHOTGUN_SHOOT, player.obj->x - 0.5, player.obj->y - 0.5, player.dir_x, player.dir_y);
-
-	//Object* m = Object_Missile(player.obj, NULL);
-//
-	//m->owner = player.obj;
-
-
-	Sound_Play(player.gun_sound_id);
-}
 
 static void Shader_Hurt(Image* img, int x, int y, int tx, int ty)
 {
@@ -103,23 +61,26 @@ static void Shader_Hurt(Image* img, int x, int y, int tx, int ty)
 	float strenght_x = (float)center_x / (float)img->half_width;
 	float strenght_y = (float)center_y / (float)img->half_height;
 
-	float time_mix = Math_Clamp(player.hurt_timer, 0, 1);
-
-	float lerp = glm_lerp(0, strenght_x, strenght_y) * time_mix;
+	float lerp = glm_lerp(0, strenght_x, strenght_y) * player.hurt_timer;
 
 	unsigned char* sample = Image_Get(img, x, y);
 
 	sample[0] = glm_lerp(sample[0], 255, lerp);
+}
+static void Shader_HurtSimple(Image* img, int x, int y, int tx, int ty)
+{
+	unsigned char* sample = Image_Get(img, x, y);
 
-	//screen shake effect
-	if (player.hurt_timer > 0.48)
+	int r = sample[0];
+
+	r *= 2;
+	
+	if (r > 255)
 	{
-		int r0 = rand() % 2;
-		float random_lerped = glm_lerp(r0, 2, lerp);
-
-		//Image_Set2(img, x + (random_lerped), y + (random_lerped * player.hurt_dir_y), sample);
-
+		r = 255;
 	}
+
+	sample[0] = r;
 }
 
 static void Shader_Dead(Image* img, int x, int y, int tx, int ty)
@@ -135,13 +96,281 @@ static void Shader_Dead(Image* img, int x, int y, int tx, int ty)
 	Image_Set2(img, x + (rand() % 2), y - (rand() % 2), sample);
 }
 
+static void Shader_Godmode(Image* img, int x, int y, int tx, int ty)
+{
+	unsigned char* sample = Image_Get(img, x, y);
+
+	sample[0] ^= sample[1];
+}
+
+static void Player_TraceBullet(float p_x, float p_y, float p_dirX, float p_dirY)
+{
+	float map_hit_x = 0;
+	float map_hit_y = 0;
+
+	int render_w;
+	Render_GetRenderSize(&render_w, NULL);
+
+	int half_w = render_w / 2;
+	int center_x = (half_w) - 1;
+	int shoot_delta = render_w / 8;
+
+	Map* map = Map_GetMap();
+
+	Object* closest = NULL;
+	Object* prev_closest = NULL;
+
+	float max_dist = FLT_MAX;
+
+	while (true)
+	{
+		prev_closest = closest;
+
+		for (int i = 0; i < map->num_sorted_objects; i++)
+		{
+			ObjectID id = map->sorted_list[i];
+			Object* object = &map->objects[id];
+
+			//behind the plane
+			if (object->view_y <= 0)
+			{
+				continue;
+			}
+
+			int screen_x = (int)((half_w) * (1 + object->view_x / object->view_y));
+
+			if (object->type == OT__MONSTER && object->hp > 0 && abs(screen_x - center_x) < shoot_delta)
+			{
+				float dist = (p_x - object->x) * (p_x - object->x) + (p_y - object->y) * (p_y - object->y);
+
+				if (dist < max_dist)
+				{
+					max_dist = dist;
+					closest = object;
+				}
+			}
+		}
+
+		if (closest == prev_closest)
+		{
+			if (Map_Raycast(p_x, p_y, p_dirX, p_dirY, &map_hit_x, &map_hit_y) != EMPTY_TILE)
+			{
+				Object_Spawn(OT__PARTICLE, SUB__PARTICLE_WALL_HIT, (map_hit_x), (map_hit_y));
+				return;
+			}
+			return;
+		}
+
+		if (Object_CheckLineToTarget(player.obj, closest))
+		{
+			break;
+		}
+	}
+
+	Object* ray_obj = closest;
+
+	if (ray_obj && ray_obj->type == OT__MONSTER)
+	{
+		int dmg = player.gun_info->damage;
+
+		//modify damage based on distance
+		if (max_dist <= 5)
+		{
+			dmg *= 4;
+		}
+		else if (max_dist <= 10)
+		{
+			dmg *= 2;
+		}
+
+		//way too far away
+		if (max_dist >= 100)
+		{
+			return;
+		}
+
+		//spawn blood particles
+		if (rand() % 100 > 50)
+		{
+			Object_Spawn(OT__PARTICLE, SUB__PARTICLE_BLOOD, (ray_obj->x) + (Math_randf() * 0.5), (ray_obj->y) + (Math_randf() * 0.5));
+		}
+
+		Object_Hurt(ray_obj, player.obj, dmg);
+	}
+}
+
+static void Player_SetGun(GunType gun_type)
+{
+	if (player.gun == gun_type)
+	{
+		return;
+	}
+	if (!player.gun_check[gun_type])
+	{
+		return;
+	}
+	if (player.gun_timer > 0)
+	{
+		return;
+	}
+
+	Sprite_ResetAnimState(&player.gun_sprites[player.gun]);
+	Sprite_ResetAnimState(&player.gun_sprites[gun_type]);
+
+	GunInfo* gun_info = Info_GetGunInfo(gun_type);
+
+	player.gun = gun_type;
+	player.gun_info = gun_info;
+}
+
+static void Player_ShootGun()
+{
+	if (player.gun_timer > 0)
+	{
+		return;
+	}
+	if (player.obj->hp <= 0)
+	{
+		return;
+	}
+	if (!player.gun_info)
+	{
+		return;
+	}
+
+	switch (player.gun)
+	{
+	case GUN__PISTOL:
+	{
+		//has infinite ammo
+		float randomf = Math_randf();
+
+		randomf = Math_Clamp(randomf, 0.0, 0.05);
+
+		if (rand() % 100 > 50)
+		{
+			randomf = -randomf;
+		}
+
+		Player_TraceBullet(player.obj->x, player.obj->y, player.obj->dir_x + randomf, player.obj->dir_y + randomf);
+
+		break;
+	}
+	case GUN__MACHINEGUN:
+	{
+		//no ammo
+		if (player.bullet_ammo <= 0)
+		{
+			//Sound_Emit(SOUND__NO_AMMO);
+			return;
+		}
+
+		float randomf = Math_randf();
+
+		randomf = Math_Clamp(randomf, 0.0, 0.2);
+
+		if (rand() % 100 > 50)
+		{
+			randomf = -randomf;
+		}
+
+		Player_TraceBullet(player.obj->x, player.obj->y, player.obj->dir_x + randomf, player.obj->dir_y + randomf);
+
+		player.bullet_ammo--;
+
+		break;
+	}
+	case GUN__SHOTGUN:
+	{
+		//no ammo
+		if (player.buck_ammo <= 0)
+		{
+			//Sound_Emit(SOUND__NO_AMMO);
+			return;
+		}
+
+		for (int i = 0; i < 8; i++)
+		{
+			float randomf = Math_randf();
+
+			randomf = Math_Clamp(randomf, 0.0, 0.25);
+
+			if (rand() % 100 > 50)
+			{
+				randomf = -randomf;
+			}
+
+			Player_TraceBullet(player.obj->x, player.obj->y, player.obj->dir_x + randomf, player.obj->dir_y + randomf);
+		}
+
+		player.buck_ammo--;
+		break;
+	}
+	default:
+		break;
+	}
+
+	Sprite* sprite = &player.gun_sprites[player.gun];
+
+	sprite->playing = true;
+	sprite->frame = 1;
+	player.gun_timer = player.gun_info->cooldown;
+
+	//PLAY SOUND
+	switch (player.gun)
+	{
+	case GUN__PISTOL:
+	{
+		Sound_EmitWorldTemp(SOUND__PISTOL_SHOOT, player.obj->x, player.obj->y, 0, 0);
+		break;
+	}
+	case GUN__SHOTGUN:
+	{
+		Sound_EmitWorldTemp(SOUND__SHOTGUN_SHOOT, player.obj->x, player.obj->y, 0, 0);
+		break;
+	}
+	case GUN__MACHINEGUN:
+	{
+		Sound_EmitWorldTemp(SOUND__MACHINEGUN_SHOOT, player.obj->x, player.obj->y, 0, 0);
+		break;
+	}
+	default:
+		break;
+	}
+}
 
 static void Player_Die()
 {
 
 }
 
-static void PressSwitch()
+static void Player_UpdateTimers(float delta)
+{
+	if (player.gun_timer > 0) player.gun_timer -= delta;
+	if (player.hurt_timer > 0) player.hurt_timer -= delta;
+	if (player.quad_timer > 0) player.quad_timer -= delta;
+	if (player.hp_tick_timer > 0) player.hp_tick_timer -= delta;
+
+	if (player.godmode_timer > 0)
+	{
+		player.godmode_timer -= delta;
+		player.obj->flags |= OBJ_FLAG__GODMODE;
+	}
+	else
+	{
+		player.obj->flags &= ~OBJ_FLAG__GODMODE;
+	}
+}
+static void Player_UpdateListener()
+{
+	ma_engine* sound_engine = Sound_GetEngine();
+
+	ma_engine_listener_set_position(sound_engine, 0, player.obj->x, 0, player.obj->y);
+	ma_engine_listener_set_direction(sound_engine, 0, -player.obj->dir_x, 0, -player.obj->dir_y);
+	Sound_Set(player.gun_sound_id, player.obj->x, player.obj->y, player.obj->dir_x, player.obj->dir_y);
+}
+
+static void Player_PressSwitch()
 {
 	for (int i = 1; i < 3; i++)
 	{
@@ -161,76 +390,13 @@ static void PressSwitch()
 	}
 }
 
-static void DrawMap(Image* image)
-{
-	GameAssets* assets = Game_GetAssets();
-
-	int map_width, map_height;
-	Map_GetSize(&map_width, &map_height);
-
-	const int rect_width = (image->width / map_width);
-	const int rect_height = image->height / map_height;
-
-	for (int x = 0; x < map_width; x++)
-	{
-		for (int y = 0; y < map_height; y++)
-		{
-			TileID tile = Map_GetTile(x, y);
-
-			if (tile == EMPTY_TILE) continue;
-
-			size_t index = x + y * map_width;
-
-			if (!player.visited_tiles[index])
-			{
-				//continue;
-			}
-
-			int cx = x * rect_width;
-			int cy = y * rect_height;
-
-			
-			for (int tx = 0; tx < rect_width; tx++)
-			{
-				for (int ty = 0; ty < rect_height; ty++)
-				{
-					unsigned char* color = Image_Get(&assets->wall_textures, 64 * (tile - 1) + tx, ty);
-
-					Image_Set2(image, cx + tx, cy + ty, color);
-				}
-			}
-
-			unsigned char color[4] = { 0, 0, 0, 0 };
-
-
-			//Video_DrawRectangle(image, cx, cy, rect_width, rect_height, color);
-
-			//top line
-			Video_DrawLine(image, cx, cy, cx + rect_width, cy, color);
-
-			//right line
-			Video_DrawLine(image, cx + rect_width, cy, cx + rect_width, cy + rect_height, color);
-
-			//bottom line
-			Video_DrawLine(image, cx, cy + rect_height, cx + rect_width, cy + rect_height, color);
-
-			//left line
-			Video_DrawLine(image, cx, cy, cx, cy + rect_height, color);
-
-		}
-	}
-
-	unsigned char player_color[4] = { 255, 0, 255, 255 };
-
-	Video_DrawRectangle(image, ((player.obj->x) * rect_width), (player.obj->y * rect_height), 32, 32, player_color);
-}
-
 static void Player_ProcessInput(GLFWwindow* window)
 {
 	int move_x = 0;
 	int move_y = 0;
 	int slow_move = 0;
 
+	//movement
 	if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
 	{
 		move_x = 1;
@@ -251,17 +417,33 @@ static void Player_ProcessInput(GLFWwindow* window)
 	{
 		slow_move = 1;
 	}
+
+	//gun input
 	if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS)
 	{
 		if (player.obj->hp > 0)
 		{
 			Player_ShootGun();
 		}
-		else if(player.hurt_timer <= 0.4)
+		else if(player.hurt_timer <= 1.0)
 		{
-			//Game_Reset(false);
+			Game_Reset(false);
 		}	
 	}
+	//gun stuff
+	if (glfwGetKey(window, GLFW_KEY_1) == GLFW_PRESS)
+	{
+		Player_SetGun(GUN__PISTOL);
+	}
+	else if (glfwGetKey(window, GLFW_KEY_2) == GLFW_PRESS)
+	{
+		Player_SetGun(GUN__SHOTGUN);
+	}
+	else if (glfwGetKey(window, GLFW_KEY_3) == GLFW_PRESS)
+	{
+		Player_SetGun(GUN__MACHINEGUN);
+	}
+	//escape
 	if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
 	{
 		Game_SetState(GS__MENU);
@@ -269,7 +451,7 @@ static void Player_ProcessInput(GLFWwindow* window)
 
 	if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
 	{
-		PressSwitch();
+		Player_PressSwitch();
 	}
 
 	player.move_x = move_x;
@@ -277,37 +459,64 @@ static void Player_ProcessInput(GLFWwindow* window)
 	player.slow_move = slow_move;
 }
 
-static void MarkNearbyTiles()
+static void Player_SetupGunSprites()
 {
-	int map_width, map_height;
-	Map_GetSize(&map_width, &map_height);
+	GameAssets* assets = Game_GetAssets();
 
-
-	int min_x = player.obj->x - 2;
-	int min_y = player.obj->y - 2;
-								
-	int max_x = player.obj->x + 2;
-	int max_y = player.obj->y + 2;
-
-	for (int x = min_x; x <= max_x; x++)
+	for (int i = 1; i < GUN__MAX; i++)
 	{
-		for (int y = min_y; y <= max_y; y++)
-		{
-			if (Map_GetTile(x, y) != EMPTY_TILE)
-			{
-				size_t index = x + y * map_width;
+		Sprite* sprite = &player.gun_sprites[i];
+		GunInfo* gun_info = Info_GetGunInfo(i);
 
-				player.visited_tiles[index] = true;
-			}
+		if (!gun_info)
+		{
+			continue;
 		}
+
+		switch (i)
+		{
+		case GUN__SHOTGUN:
+		{
+			sprite->img = &assets->shotgun_texture;
+			sprite->anim_speed_scale = 2;
+			break;
+		}
+		case GUN__PISTOL:
+		{
+			sprite->img = &assets->pistol_texture;
+			sprite->anim_speed_scale = 1;
+			break;
+		}
+		case GUN__MACHINEGUN:
+		{
+			sprite->img = &assets->machinegun_texture;
+			sprite->anim_speed_scale = 1;
+			break;
+		}
+		default:
+			break;
+		}
+
+		sprite->frame_count = sprite->img->h_frames * sprite->img->v_frames;
+		sprite->scale_x = gun_info->scale;
+		sprite->scale_y = gun_info->scale;
+		sprite->x = gun_info->screen_x;
+		sprite->y = gun_info->screen_y;
 	}
 }
 
-void Player_Init()
+void Player_Init(int keep)
 {
-	if (player.visited_tiles)
+	int hp = 100;
+	float sens = player.sensitivity;
+	bool guns_check[GUN__MAX];
+	int buck_ammo = player.buck_ammo;
+	int bullet_ammo = player.bullet_ammo;
+
+	if (keep)
 	{
-		free(player.visited_tiles);
+		memcpy(guns_check, player.gun_check, sizeof(guns_check));
+		hp = player.obj->hp;
 	}
 
 	memset(&player, 0, sizeof(player));
@@ -315,49 +524,32 @@ void Player_Init()
 	int spawn_x, spawn_y;
 	Map_GetSpawnPoint(&spawn_x, &spawn_y);
 
-	player.obj = Map_NewObject(OT__PLAYER);
+	if (keep)
+	{
+		memcpy(player.gun_check, guns_check, sizeof(guns_check));
+		player.bullet_ammo = bullet_ammo;
+		player.buck_ammo = buck_ammo;
+	}
 
-	player.obj->type = OT__PLAYER;	
+	player.gun_check[GUN__PISTOL] = true;
+
+	player.obj = Map_NewObject(OT__PLAYER);
 
 	player.obj->x = spawn_x;
 	player.obj->y = spawn_y;
-	player.plane_x = 0;
-	player.plane_y = 0.66;
+
 	player.obj->dir_x = -1;
 	player.obj->dir_y = 0;
+	player.plane_x = 0;
+	player.plane_y = 0.66;
 
-	GameAssets* assets = Game_GetAssets();
-
-	player.gun_sprite.img = &assets->weapon_textures;
-	player.gun_sprite.scale_x = 2;
-	player.gun_sprite.scale_y = 2;
-	player.gun_sprite.anim_speed_scale = 0.7;
-	player.gun_sprite.frame = 0;
-	player.gun_sprite.flip_h = false;
-	player.gun_sprite.flip_v = false;
-	player.gun_sprite.looping = false;
-	player.gun_sprite.transparency = 0.0;
-	player.gun_sprite.frame_count = 10;
-	player.obj->hp = 100;
+	player.obj->hp = hp;
 	player.obj->size = 0.4;
 
-	Player_SetSensitivity(1);
+	player.sensitivity = sens;
 
-	player.gun_sound_id = Sound_Preload(SOUND__SHOTGUN_SHOOT);
-
-	Sound_setMasterVolume(0.2);
-
-	player.ammo = 14;
-
-	int map_width, map_height;
-	Map_GetSize(&map_width, &map_height);
-
-	player.visited_tiles = malloc(sizeof(bool) * map_width * map_height);
-
-	if (player.visited_tiles)
-	{
-		memset(player.visited_tiles, 0, sizeof(bool) * map_width * map_height);
-	}
+	Player_SetupGunSprites();
+	Player_SetGun(GUN__PISTOL);
 }
 
 Object* Player_GetObj()
@@ -367,22 +559,17 @@ Object* Player_GetObj()
 
 void Player_Hurt(float dir_x, float dir_y)
 {
-
 	if (player.obj->hp <= 0)
 	{
+		player.hurt_timer = 2;
 		Sound_EmitWorldTemp(SOUND__PLAYER_DIE, player.obj->x, player.obj->y, player.obj->dir_x, player.obj->dir_y);
-
-		//Game_Reset(false);
 	}
 	else
 	{
+		player.hurt_timer = 0.5;
 		Sound_EmitWorldTemp(SOUND__PLAYER_PAIN, player.obj->x, player.obj->y, player.obj->dir_x, player.obj->dir_y);
 	}
 
-	player.hurt_timer = 0.5;
-
-	player.hurt_dir_x = Math_signf(dir_x);
-	player.hurt_dir_y = Math_signf(dir_y);
 }
 
 void Player_HandlePickup(Object* obj)
@@ -391,12 +578,81 @@ void Player_HandlePickup(Object* obj)
 	{
 	case SUB__PICKUP_SMALLHP:
 	{
-		player.obj->hp += 5;
+		Sound_Emit(SOUND__PICKUP_HP);
+
+		player.obj->hp += PICKUP_SMALLHP_HEAL;
+		break;
+	}
+	case SUB__PICKUP_BIGHP:
+	{
+		Sound_Emit(SOUND__PICKUP_HP);
+
+		player.obj->hp += PICKUP_BIGHP_HEAL;
 		break;
 	}
 	case SUB__PICKUP_AMMO:
 	{
-		player.ammo += 10;
+		player.buck_ammo += PICKUP_AMMO_GIVE / 2;
+		player.bullet_ammo += PICKUP_AMMO_GIVE;
+		break;
+	}
+	case SUB__PICKUP_ROCKETS:
+	{
+		player.bullet_ammo += PICKUP_ROCKETS_GIVE;
+		break;
+	}
+	case SUB__PICKUP_SHOTGUN:
+	{
+		bool just_picked = false;
+
+		if (!player.gun_check[GUN__SHOTGUN])
+		{
+			just_picked = true;
+		}
+		
+		player.gun_check[GUN__SHOTGUN] = true;
+		player.buck_ammo += PICKUP_SHOTGUN_AMMO_GIVE;
+
+		if (just_picked)
+		{
+			player.gun_timer = 0;
+			Player_SetGun(GUN__SHOTGUN);
+		}
+
+		break;
+	}
+	case SUB__PICKUP_MACHINEGUN:
+	{
+		bool just_picked = false;
+
+		if (!player.gun_check[GUN__MACHINEGUN])
+		{
+			just_picked = true;
+		}
+
+		player.gun_check[GUN__MACHINEGUN] = true;
+		player.bullet_ammo += PICKUP_MACHINEGUN_AMMO_GIVE;
+
+		if (just_picked)
+		{
+			player.gun_timer = 0;
+			Player_SetGun(GUN__MACHINEGUN);
+		}
+
+		break;
+	}
+	case SUB__PICKUP_INVUNERABILITY:
+	{
+		Sound_Emit(SOUND__PICKUP_SPECIAL);
+
+		player.godmode_timer = PICKUP_INVUNERABILITY_TIME;
+		break;
+	}
+	case SUB__PICKUP_QUAD_DAMAGE:
+	{
+		Sound_Emit(SOUND__PICKUP_SPECIAL);
+
+		player.quad_timer = PICKUP_QUAD_TIME;
 		break;
 	}
 	default:
@@ -405,6 +661,10 @@ void Player_HandlePickup(Object* obj)
 	}
 	}
 
+	//clamp
+	if (player.bullet_ammo >= PLAYER_MAX_AMMO) player.bullet_ammo = PLAYER_MAX_AMMO;
+	if (player.buck_ammo >= PLAYER_MAX_AMMO) player.buck_ammo = PLAYER_MAX_AMMO;
+
 	//delete the object
 	Map_DeleteObject(obj);
 }
@@ -412,52 +672,45 @@ void Player_HandlePickup(Object* obj)
 void Player_Update(GLFWwindow* window, float delta)
 {
 	Player_ProcessInput(window);
+	Player_UpdateTimers(delta);
+	Sprite_UpdateAnimation(&player.gun_sprites[player.gun], delta);
 
+	if (player.obj->hp > PLAYER_MAX_HP)
+	{
+		if (player.hp_tick_timer <= 0)
+		{
+			player.obj->hp--;
+			player.hp_tick_timer = PLAYER_OVERHEAL_HP_TICK_TIME;
+		}
+	}
+	
+	//move player
 	float speed = PLAYER_SPEED * delta;
-
 	if (player.slow_move == 1) speed *= 0.5;
 
 	float dir_x = (player.move_x * player.obj->dir_x) + (player.move_y * player.plane_x);
 	float dir_y = (player.move_x * player.obj->dir_y) + (player.move_y * player.plane_y);
 
-	if(player.obj->hp > 0)
+	if (player.obj->hp > 0)
+	{
 		Move_Object(player.obj, dir_x * speed, dir_y * speed);
-
-	Sprite_UpdateAnimation(&player.gun_sprite, delta);
-
-	if (!player.gun_sprite.playing)
-	{
-		player.gun_sprite.frame = 0;
 	}
 
-	if (dir_x != 0 || dir_y != 0)
+	if (player.move_x != 0 || player.move_y != 0)
 	{
-		MarkNearbyTiles();
-	}
-	player.obj->hp = 100;
+		float bob_amp = 0.005;
+		float bob_freq = speed * 4;
+			
+		player.bob += delta;
 
-	player.gun_timer -= delta;
-
-	ma_engine* sound_engine = Sound_GetEngine();
-
-	ma_engine_listener_set_position(sound_engine, 0, player.obj->x, 0, player.obj->y);
-	ma_engine_listener_set_direction(sound_engine, 0, -player.obj->dir_x, 0, -player.obj->dir_y);
-	Sound_Set(player.gun_sound_id, player.obj->x, player.obj->y, player.obj->dir_x, player.obj->dir_y);
-
-	player.hurt_timer -= delta;
-
-	if (player.hurt_timer >= 0.4)
-	{
-		//Engine_SetTimeScale(0.95);
-	}
-	else
-	{
-	//	Engine_SetTimeScale(1);
+		player.gun_offset_x = cosf(player.bob * bob_freq / bob_freq) * bob_amp;
+		player.gun_offset_y = sinf(player.bob * bob_freq) * bob_amp;
 	}
 
-	if (player.obj->hp <= 0)
+	//make sure to reset the frame
+	if (!player.gun_sprites[player.gun].playing)
 	{
-		//Engine_SetTimeScale(0.1);
+		player.gun_sprites[player.gun].frame = 0;
 	}
 }
 
@@ -498,8 +751,6 @@ void Player_MouseCallback(float x, float y)
 
 	float rotSpeed = xOffset * (player.sensitivity / MOUSE_SENS_DIVISOR);
 
-	//rotSpeed *= Engine_GetDeltaTime();
-
 	double oldDirX = player.obj->dir_x;
 	player.obj->dir_x = player.obj->dir_x * cos(-rotSpeed) - player.obj->dir_y * sin(-rotSpeed);
 	player.obj->dir_y = oldDirX * sin(-rotSpeed) + player.obj->dir_y * cos(-rotSpeed);
@@ -513,37 +764,69 @@ void Player_Draw(Image* image, FontData* font)
 	LightTile* light_tile = Map_GetLightTile(player.obj->x, player.obj->y);
 
 	//draw gun
-	if (player.obj->hp > 0)
+	if (player.obj->hp > 0 && light_tile)
 	{
-		player.gun_sprite.light = (float)light_tile->light / 255.0f;
-		player.gun_sprite.x = 0.35;
-		player.gun_sprite.y = 0.5;
+		int l = (int)light_tile->light + (int)light_tile->temp_light;
 
-		Video_DrawScreenSprite(image, &player.gun_sprite);
+		if (l > 255) l = 255;
+
+		Sprite* sprite = &player.gun_sprites[player.gun];
+
+		float old_x = sprite->x;
+		float old_y = sprite->y;
+
+		sprite->light = (float)l / 255.0f;
+
+		sprite->x += player.gun_offset_x;
+		sprite->y += player.gun_offset_y;
+
+		Video_DrawScreenSprite(image, sprite);
+
+		sprite->x = old_x;
+		sprite->y = old_y;
 	}
 		
-
+	//emit hurt shader
 	if (player.hurt_timer > 0)
 	{
-		//Video_Shade(image, Shader_Hurt, 0, 0, image->width, image->height);
+		Render_QueueFullscreenShader(Shader_HurtSimple);
 	}
+	else if (player.godmode_timer > 0)
+	{
+		Render_QueueFullscreenShader(Shader_Godmode);
+	}
+	//draw hud
 	if (player.obj->hp > 0)
 	{
-		//draw hud
+		//pseudo crosshair
+		Text_Draw(image, font, 0.5, 0.49, 0.3, 0.3, ".");
+
 		//hp
-		Text_Draw(image, font, 0.02, 0.88, 1, 1, "HP %i", player.obj->hp);
+		Text_Draw(image, font, 0.02, 0.95, 1, 1, "HP %i", player.obj->hp);
 
 		//ammo
-		Text_Draw(image, font, 0.75, 0.88, 1, 1, "AMMO %i", player.ammo);
+		if (player.gun == GUN__PISTOL)
+		{
+			Text_Draw(image, font, 0.75, 0.95, 1, 1, "AMMO INF");
+		}
+		else if (player.gun == GUN__MACHINEGUN)
+		{
+			Text_Draw(image, font, 0.75, 0.95, 1, 1, "AMMO %i", player.bullet_ammo);
+		}
+		else if (player.gun == GUN__SHOTGUN)
+		{
+			Text_Draw(image, font, 0.75, 0.95, 1, 1, "AMMO %i", player.buck_ammo);
+		}
+
 	}
 	else
 	{
-		//Video_Shade(image, Shader_Hurt, 0, 0, image->width, image->height);
-		//Video_Shade(image, Shader_Dead, 0, 0, image->width, image->height);
-		//Text_Draw(image, font, 0.2, 0.2, 1, 1, "DEAD\n PRESS FIRE TO CONTINUE...");
+		//draw crazy death stuff
+		Video_Shade(image, Shader_Hurt, 0, 0, image->width, image->height);
+		Video_Shade(image, Shader_Dead, 0, 0, image->width, image->height);
+		Text_Draw(image, font, 0.45, 0.2, 1, 1, "DEAD");
+		Text_Draw(image, font, 0.2, 0.5, 1, 1, "PRESS FIRE TO CONTINUE...");
 	}
-	
-	//DrawMap(image);
 }
 
 float Player_GetSensitivity()

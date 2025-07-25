@@ -11,6 +11,9 @@
 #define BASE_RENDER_WIDTH 640
 #define BASE_RENDER_HEIGHT 360
 
+#define LIGHT_LOW 0
+#define LIGHT_HIGH 1
+
 typedef struct
 {
 	uint8_t light;
@@ -140,8 +143,6 @@ inline void Image_SetScaled(Image* img, int x, int y, float scale, unsigned char
 	
 }
 
-
-
 inline unsigned char* Image_Get(Image* img, int x, int y)
 {
 	if (x < 0)
@@ -164,56 +165,7 @@ inline unsigned char* Image_Get(Image* img, int x, int y)
 	return img->data + (x + y * img->width) * img->numChannels;
 }
 
-inline void Image_GetBlured(Image* img, int x, int y, int size, float scale, unsigned char* r_color)
-{
-	if (x < 0)
-	{
-		x = 0;
-	}
-	else if (x >= img->width)
-	{
-		x = img->width - 1;
-	}
-	if (y < 0)
-	{
-		y = 0;
-	}
-	else if (y >= img->height)
-	{
-		y = img->height - 1;
-	}
-
-	int dir_x = 1;
-	int dir_y = 0;
-
-	int half_size = size / 2;
-
-	for (int i = -half_size; i < half_size; i++)
-	{
-		if (i == 0)
-		{
-			continue;
-		}
-
-		float radius = (float)i * scale;
-
-		int tx = x + dir_x * radius;
-		int ty = y + dir_y * radius;
-
-		unsigned char* sample = Image_Get(img, tx, ty);
-
-		for (int k = 0; k < img->numChannels; k++)
-		{
-			r_color[k] += sample[k];
-		}
-	}
-	for (int k = 0; k < img->numChannels; k++)
-	{
-		r_color[k] /= size;
-	}
-}
-
-
+//unfinished
 inline unsigned char* Image_GetMipmapped(Image* img, int x, int y, float dist)
 {
 	dist = fabs(dist);
@@ -299,6 +251,7 @@ typedef struct
 
 
 void Sprite_UpdateAnimation(Sprite* sprite, float delta);
+void Sprite_ResetAnimState(Sprite* sprite);
 
 void Video_Setup();
 void Video_DrawLine(Image* image, int x0, int y0, int x1, int y1, unsigned char* color);
@@ -314,15 +267,18 @@ void Video_DrawScreenSprite(Image* image, Sprite* sprite);
 typedef void (*ShaderFun)(Image* image, int x, int y, int tx, int ty);
 void Video_Shade(Image* image, ShaderFun shader_fun, int x0, int y0, int x1, int y1);
 
-void Render_Init(int width, int height);
+bool Render_Init(int width, int height);
 void Render_ShutDown();
 void Render_Loop();
+void Render_LockThreadsMutex();
+void Render_UnlockThreadsMutex();
 void Render_LockObjectMutex();
 void Render_UnlockObjectMutex();
 void Render_FinishAndStall();
 void Render_Resume();
 void Render_AddSpriteToQueue(Sprite* sprite);
 void Render_AddScreenSpriteToQueue(Sprite* sprite);
+void Render_QueueFullscreenShader(ShaderFun shader_fun);
 
 void Render_RedrawWalls();
 void Render_RedrawSprites();

@@ -8,11 +8,11 @@
 #include <cjson/cJSON.h>
 #include <cglm/cglm.h>
 #include "u_math.h"
+#include "game_info.h"
 
 #include "utility.h"
 
 static Map s_map;
-static Sprite* s_spritePointers[MAX_OBJECTS];
 
 static int CompareSpriteDistances(const void* a, const void* b)
 {
@@ -25,6 +25,23 @@ static int CompareSpriteDistances(const void* a, const void* b)
 	return 0;
 }
 
+static void Map_ClearTempLight()
+{
+	Render_LockThreadsMutex();
+
+	for (int x = 0; x < s_map.width; x++)
+	{
+		for (int y = 0; y < s_map.height; y++)
+		{
+			LightTile* light_tile = Map_GetLightTile(x, y);
+
+			light_tile->temp_light = 0;
+		}
+	}
+
+	Render_UnlockThreadsMutex();
+	Render_RedrawWalls();
+}
 static void Map_UpdateSortedList()
 {
 	int index = 0;
@@ -100,46 +117,48 @@ static void Map_ConnectTriggersToTargets()
 		if (t && t->sub_type == SUB__TARGET_TELEPORT)
 		{
 			GameAssets* assets = Game_GetAssets();
-			obj->sprite.img = &assets->decoration_textures;
-			obj->sprite.frame_count = 4;
-			obj->sprite.anim_speed_scale = 0.5;
+
+			ObjectInfo* object_info = Info_GetObjectInfo(OT__TARGET, SUB__TARGET_TELEPORT);
+
+			obj->sprite.img = &assets->object_textures;
+			obj->sprite.frame_count = object_info->anim_info.frame_count;
+			obj->sprite.anim_speed_scale = object_info->anim_speed;
 			obj->sprite.playing = true;
-			obj->sprite.looping = true;
-			obj->sprite.offset_x = 0.5;
-			obj->sprite.offset_y = 0.5;
-			obj->sprite.frame_offset_y = 1;
+			obj->sprite.looping = object_info->anim_info.looping;
+			obj->sprite.offset_x = object_info->sprite_offset_x;
+			obj->sprite.offset_y = object_info->sprite_offset_y;
+			obj->sprite.frame_offset_y = object_info->anim_info.y_offset;
+			obj->sprite.frame_offset_x = object_info->anim_info.x_offset;
 			obj->sprite.light = 1;
 		}
 	}
 }
 
-static int Map_CalculateLight(int light_x, int light_y, int tile_x, int tile_y, float linear, float quadratic, float scale)
+static float calc_light_attenuation(float distance, float inv_range, float decay)
+{
+	float nd = distance * inv_range;
+	nd *= nd;
+	nd *= nd;
+	nd = max(1.0 - nd, 0.0);
+	nd *= nd;
+	return nd * pow(max(distance, 0.0001), -decay);
+}
+
+static void Map_CalculateLight(int light_x, int light_y, int tile_x, int tile_y, float radius, float attenuation, float scale, bool temp_light)
 {
 	if (light_x < 0) light_x = 0; else if (light_x >= s_map.width) light_x = s_map.width - 1;
 	if (light_y < 0) light_y = 0; else if (light_y >= s_map.height) light_y = s_map.height - 1;
 
-	int dir_x = light_x - tile_x;
-	int dir_y = light_y - tile_y;
+	float light_radius = radius;
+	float light_attenuation = attenuation;
 
-	float norm_dir_x = dir_x;
-	float norm_dir_y = dir_y;
-
-	Math_XY_Normalize(&norm_dir_x, &norm_dir_y);
-
-	DirEnum dir = DirVectorToDirEnum(dir_x, dir_y);
-
-	float light_linear = linear;
-	float light_quadratic = quadratic;
+	float inv_radius = 1.0 / light_radius;
 
 	float distance = Math_XY_Length(tile_x - light_x, tile_y - light_y);
-	float attenuation = 1.0 / (1.0 + light_linear * distance + light_quadratic * distance * distance);
+	light_attenuation = calc_light_attenuation(distance, inv_radius, light_attenuation);
+	light_attenuation *= scale;
 
-	int index = light_x + light_y * s_map.width;
-	LightTile* light_tile = &s_map.light_tiles[index];
-
-	attenuation *= scale;
-
-	int light = attenuation * 255;
+	int light = light_attenuation * 255;
 
 	if (light > 255)
 	{
@@ -150,44 +169,95 @@ static int Map_CalculateLight(int light_x, int light_y, int tile_x, int tile_y, 
 		light = 0;
 	}
 
-	if (dir == DIR_NORTH || dir == DIR_NORTH_EAST || dir == DIR_NORTH_WEST)
+	int index = light_x + light_y * s_map.width;
+	LightTile* light_tile = &s_map.light_tiles[index];
+
+	if (temp_light)
 	{
-		int l = light + (int)light_tile->light_north;
+		int l = light + (int)light_tile->temp_light;
 
 		if (l > 255) l = 255;
 
-		light_tile->light_north = (uint8_t)l;
+		light_tile->temp_light = (uint8_t)l;
 	}
-	if (dir == DIR_SOUTH || dir == DIR_SOUTH_EAST || dir == DIR_SOUTH_WEST)
+	else
 	{
-		int l = light + (int)light_tile->light_south;
+		int dir_x = light_x - tile_x;
+		int dir_y = light_y - tile_y;
+
+		float norm_dir_x = dir_x;
+		float norm_dir_y = dir_y;
+
+		Math_XY_Normalize(&norm_dir_x, &norm_dir_y);
+
+		DirEnum dir = DirVectorToDirEnum(dir_x, dir_y);
+
+		if (dir == DIR_NORTH || dir == DIR_NORTH_EAST || dir == DIR_NORTH_WEST)
+		{
+			int l = light + (int)light_tile->light_north;
+
+			if (l > 255) l = 255;
+
+			light_tile->light_north = (uint8_t)l;
+		}
+		if (dir == DIR_SOUTH || dir == DIR_SOUTH_EAST || dir == DIR_SOUTH_WEST)
+		{
+			int l = light + (int)light_tile->light_south;
+
+			if (l > 255) l = 255;
+
+			light_tile->light_south = (uint8_t)l;
+		}
+		if (dir == DIR_WEST || dir == DIR_SOUTH_WEST || dir == DIR_NORTH_WEST)
+		{
+			int l = light + (int)light_tile->light_west;
+
+			if (l > 255) l = 255;
+
+			light_tile->light_west = (uint8_t)l;
+		}
+		if (dir == DIR_EAST || dir == DIR_SOUTH_EAST || dir == DIR_NORTH_EAST)
+		{
+			int l = light + (int)light_tile->light_east;
+
+			if (l > 255) l = 255;
+
+			light_tile->light_east = (uint8_t)l;
+		}
+
+		int l = light + (int)light_tile->light;
 
 		if (l > 255) l = 255;
 
-		light_tile->light_south = (uint8_t)l;
-	}
-	if (dir == DIR_WEST || dir == DIR_SOUTH_WEST || dir == DIR_NORTH_WEST)
+		light_tile->light = (uint8_t)l;
+	}	
+}
+
+static void SetLightTileCallback(int center_x, int center_y, int x, int y)
+{
+	Object* light_obj = Map_GetObjectAtTile(center_x, center_y);
+
+	float radius = 6;
+	float attenuation = 1;
+	float scale = 1;
+
+	if (light_obj && light_obj->type == OT__LIGHT)
 	{
-		int l = light + (int)light_tile->light_west;
+		LightInfo* light_info = Info_GetLightInfo(light_obj->sub_type);
 
-		if (l > 255) l = 255;
-
-		light_tile->light_west = (uint8_t)l;
-	}
-	if (dir == DIR_EAST || dir == DIR_SOUTH_EAST || dir == DIR_NORTH_EAST)
-	{
-		int l = light + (int)light_tile->light_east;
-
-		if (l > 255) l = 255;
-
-		light_tile->light_east = (uint8_t)l;
+		if (light_info)
+		{
+			radius = light_info->radius;
+			attenuation = light_info->attenuation;
+			scale = light_info->scale;
+		}
 	}
 
-	int l = light + (int)light_tile->light;
-
-	if (l > 255) l = 255;
-
-	light_tile->light = (uint8_t)l;
+	Map_CalculateLight(x, y, center_x, center_y, radius, attenuation, scale, false);
+}
+static void SetTempLightTileCallback(int center_x, int center_y, int x, int y)
+{
+	Map_CalculateLight(x, y, center_x, center_y, 4.5, 1, 0.5, true);
 }
 
 static void Map_SetupLightTiles()
@@ -226,51 +296,19 @@ static void Map_SetupLightTiles()
 			continue;
 		}
 
+		LightInfo* light_info = Info_GetLightInfo(object->sub_type);
+
+		int radius = 6;
+
+		if (light_info)
+		{
+			radius = light_info->radius;
+		}
+
 		int tile_x = (int)object->x;
 		int tile_y = (int)object->y;
 
-		int light_size = 6;
-
-		for (int x = -light_size; x <= light_size; x++)
-		{
-			for (int y = -light_size; y <= light_size; y++)
-			{
-				int light_x = tile_x + x;
-				int light_y = tile_y + y;
-				if (light_x < 0) light_x = 0; else if (light_x >= s_map.width) light_x = s_map.width - 1;
-				if (light_y < 0) light_y = 0; else if (light_y >= s_map.height) light_y = s_map.height - 1;
-
-				int dir_x = light_x - tile_x;
-				int dir_y = light_y - tile_y;
-
-				//check for blocking tiles, add a small bias so we won't check the exact tile that is blocking
-				int check_sign_x = 0;
-				int check_sign_y = 0;
-
-				if (dir_x != 0)
-				{
-					check_sign_x = (dir_x > 0) ? 1 : -1;
-				}
-				if (dir_y != 0)
-				{
-					check_sign_y = (dir_y > 0) ? 1 : -1;
-				}
-				
-				if (!Object_CheckLineToTile2(object, light_x, light_y))
-				{
-					continue;
-				}
-				
-				float scale = 1;
-
-				if (!Object_CheckLineToTile(object, light_x, light_y))
-				{
-					scale *= 0.5;
-				}
-
-				Map_CalculateLight(light_x, light_y, tile_x, tile_y, 0.02, 0.08, scale);
-			}
-		}
+		Trace_ShadowCast(tile_x, tile_y, radius, SetLightTileCallback);
 	}
 }
 
@@ -299,6 +337,11 @@ static ObjectID Map_GetNewObjectIndex()
 	}
 
 	return id;
+}
+
+void Map_SetDirtyTempLight()
+{
+	s_map.dirty_temp_light = true;
 }
 
 int Map_GetLevelIndex()
@@ -378,8 +421,9 @@ bool Map_Load(const char* filename)
 	cJSON_ArrayForEach(layer, layers)
 	{
 		cJSON* type = cJSON_GetObjectItem(layer, "type");
+		cJSON* name = cJSON_GetObjectItem(layer, "name");
 
-		if (!type || !cJSON_IsString(type))
+		if (!type || !cJSON_IsString(type) || !name || !cJSON_IsString(name))
 		{
 			printf("ERROR::Failed to load map!\n");
 			result = false;
@@ -387,7 +431,7 @@ bool Map_Load(const char* filename)
 		}
 
 		//tile layer
-		if(!strcmp(cJSON_GetStringValue(type), "tilelayer"))
+		if(!strcmp(cJSON_GetStringValue(type), "tilelayer") && !strcmp(cJSON_GetStringValue(name), "tile_layer"))
 		{
 			cJSON* width = cJSON_GetObjectItem(layer, "width");
 			cJSON* height = cJSON_GetObjectItem(layer, "height");
@@ -460,6 +504,68 @@ bool Map_Load(const char* filename)
 			}
 
 		}
+		//floor layer
+		else if (!strcmp(cJSON_GetStringValue(type), "tilelayer") && !strcmp(cJSON_GetStringValue(name), "floor_layer"))
+		{
+			cJSON* width = cJSON_GetObjectItem(layer, "width");
+			cJSON* height = cJSON_GetObjectItem(layer, "height");
+
+			if (!width || !height || !cJSON_IsNumber(width) || !cJSON_IsNumber(height))
+			{
+				printf("ERROR::Failed to load map!\n");
+				result = false;
+				goto cleanup;
+			}
+
+			int w = cJSON_GetNumberValue(width);
+			int h = cJSON_GetNumberValue(height);
+
+			cJSON* tile_data = cJSON_GetObjectItem(layer, "data");
+
+			if (!tile_data || !cJSON_IsArray(tile_data))
+			{
+				printf("ERROR::Failed to load map!\n");
+				result = false;
+				goto cleanup;
+			}
+
+			//allocate tile buffer
+			s_map.floor_tiles = calloc(h * w, sizeof(TileID));
+
+			if (!s_map.floor_tiles)
+			{
+				printf("ERROR::Failed to load map!\n");
+				result = false;
+				goto cleanup;
+			}
+
+			int index = 0;
+			//parse each tile
+			for (int y = 0; y < h; y++)
+			{
+				for (int x = 0; x < w; x++)
+				{
+					cJSON* tile = cJSON_GetArrayItem(tile_data, index);
+
+					if (!tile || !cJSON_IsNumber(tile))
+					{
+						printf("ERROR::Failed to load map!\n");
+						result = false;
+						goto cleanup;
+					}
+
+					int tile_number = cJSON_GetNumberValue(tile);
+
+					s_map.floor_tiles[x + y * w] = tile_number;
+
+					index++;
+				}
+			}
+
+			s_map.floor_width = w;
+			s_map.floor_height = h;
+
+		}
 		//parse objects
 		else if (!strcmp(cJSON_GetStringValue(type), "objectgroup"))
 		{
@@ -488,9 +594,7 @@ bool Map_Load(const char* filename)
 				cJSON* type = cJSON_GetObjectItem(object, "type");
 				if (!type || !cJSON_IsString(type))
 				{
-					printf("ERROR::Failed to load map!\n");
-					result = false;
-					goto cleanup;
+					continue;
 				}
 
 				cJSON* id = cJSON_GetObjectItem(object, "id");
@@ -519,19 +623,29 @@ bool Map_Load(const char* filename)
 
 				bool is_tile_centered = false;
 
-				if (!strcmp(type_value, "light"))
+				if (!strcmp(type_value, "light_torch"))
 				{
-					map_object = Object_Spawn(OT__LIGHT, 0, obj_x, obj_y);
-
-					//is_tile_centered = true;
+					map_object = Object_Spawn(OT__LIGHT, SUB__LIGHT_TORCH, obj_x, obj_y);
 				}
-				else if (!strcmp(type_value, "barrel"))
+				if (!strcmp(type_value, "light_lamp"))
 				{
-					map_object = Object_Spawn(OT__THING, SUB__THING_BARREL, obj_x, obj_y);
+					map_object = Object_Spawn(OT__LIGHT, SUB__LIGHT_LAMP, obj_x, obj_y);
 				}
-				else if (!strcmp(type_value, "torch"))
+				else if (!strcmp(type_value, "thing_redcollumn"))
 				{
-					map_object = Object_Spawn(OT__THING, SUB__THING_TORCH, obj_x, obj_y);
+					map_object = Object_Spawn(OT__THING, SUB__THING_RED_COLLUMN, obj_x, obj_y);
+				}
+				else if (!strcmp(type_value, "thing_bluecollumn"))
+				{
+					map_object = Object_Spawn(OT__THING, SUB__THING_BLUE_COLLUMN, obj_x, obj_y);
+				}
+				else if (!strcmp(type_value, "thing_redflag"))
+				{
+					map_object = Object_Spawn(OT__THING, SUB__THING_RED_FLAG, obj_x, obj_y);
+				}
+				else if (!strcmp(type_value, "thing_blueflag"))
+				{
+					map_object = Object_Spawn(OT__THING, SUB__THING_BLUE_FLAG, obj_x, obj_y);
 				}
 				else if (!strcmp(type_value, "monster_imp"))
 				{
@@ -541,13 +655,41 @@ bool Map_Load(const char* filename)
 				{
 					map_object = Object_Spawn(OT__MONSTER, SUB__MOB_PINKY, obj_x, obj_y);
 				}
+				else if (!strcmp(type_value, "monster_bruiser"))
+				{
+					map_object = Object_Spawn(OT__MONSTER, SUB__MOB_BRUISER, obj_x, obj_y);
+				}
 				else if (!strcmp(type_value, "pickup_smallhp"))
 				{
 					map_object = Object_Spawn(OT__PICKUP, SUB__PICKUP_SMALLHP, obj_x, obj_y);
 				}
+				else if (!strcmp(type_value, "pickup_bighp"))
+				{
+					map_object = Object_Spawn(OT__PICKUP, SUB__PICKUP_BIGHP, obj_x, obj_y);
+				}
 				else if (!strcmp(type_value, "pickup_ammo"))
 				{
 					map_object = Object_Spawn(OT__PICKUP, SUB__PICKUP_AMMO, obj_x, obj_y);
+				}
+				else if (!strcmp(type_value, "pickup_rockets"))
+				{
+					map_object = Object_Spawn(OT__PICKUP, SUB__PICKUP_ROCKETS, obj_x, obj_y);
+				}
+				else if (!strcmp(type_value, "pickup_godmode"))
+				{
+					map_object = Object_Spawn(OT__PICKUP, SUB__PICKUP_INVUNERABILITY, obj_x, obj_y);
+				}
+				else if (!strcmp(type_value, "pickup_quad"))
+				{
+					map_object = Object_Spawn(OT__PICKUP, SUB__PICKUP_QUAD_DAMAGE, obj_x, obj_y);
+				}
+				else if (!strcmp(type_value, "pickup_shotgun"))
+				{
+					map_object = Object_Spawn(OT__PICKUP, SUB__PICKUP_SHOTGUN, obj_x, obj_y);
+				}
+				else if (!strcmp(type_value, "pickup_machinegun"))
+				{
+					map_object = Object_Spawn(OT__PICKUP, SUB__PICKUP_MACHINEGUN, obj_x, obj_y);
 				}
 				else if (!strcmp(type_value, "trigger") || !strcmp(type_value, "trigger_once") || !strcmp(type_value, "trigger_switch"))
 				{
@@ -618,7 +760,18 @@ bool Map_Load(const char* filename)
 				{
 					map_object = Object_Spawn(OT__DOOR, SUB__DOOR_VERTICAL, obj_x, obj_y);
 
-					is_tile_centered = true;
+					if (map_object)
+					{
+						is_tile_centered = true;
+
+						cJSON* gid = cJSON_GetObjectItem(object, "gid");
+
+						if (gid && cJSON_IsNumber(gid))
+						{
+							map_object->gid = cJSON_GetNumberValue(gid);
+						}
+
+					}
 				}
 				else if (!strcmp(type_value, "tile_fake"))
 				{
@@ -632,7 +785,7 @@ bool Map_Load(const char* filename)
 
 						if (gid && cJSON_IsNumber(gid))
 						{
-							map_object->state = cJSON_GetNumberValue(gid);
+							map_object->gid = cJSON_GetNumberValue(gid);
 						}
 
 					}
@@ -657,6 +810,13 @@ bool Map_Load(const char* filename)
 	Map_UpdateSortedList();
 	Map_SetupLightTiles();
 
+	if (!s_map.tiles) 
+	{
+		printf("ERROR::Failed to load map!\n");
+		result = false;
+		goto cleanup;
+	}
+
 	cleanup:
 	//cleanup
 	cJSON_Delete(json);
@@ -676,6 +836,20 @@ TileID Map_GetTile(int x, int y)
 	assert(index < s_map.width * s_map.height);
 
 	return s_map.tiles[index];
+}
+
+TileID Map_GetFloorTile(int x, int y)
+{
+	if (x < 0 || y < 0 || x >= s_map.floor_width || y >= s_map.floor_height || !s_map.floor_tiles)
+	{
+		return EMPTY_TILE + 1;
+	}
+
+	size_t index = x + y * s_map.floor_width;
+
+	assert(index < s_map.floor_width * s_map.floor_height);
+
+	return s_map.floor_tiles[index];
 }
 
 Object* Map_GetObjectAtTile(int x, int y)
@@ -719,6 +893,11 @@ LightTile* Map_GetLightTile(int x, int y)
 	int index = x + y * s_map.width;
 
 	return &s_map.light_tiles[index];
+}
+
+void Map_SetTempLight(int x, int y, int size, int light)
+{
+	Trace_ShadowCast(x, y, size, SetTempLightTileCallback);
 }
 
 TileID Map_Raycast(float p_x, float p_y, float dir_x, float dir_y, float* r_hitX, float* r_hitY)
@@ -927,57 +1106,8 @@ int Map_GetTotalNonEmptyTiles()
 	return s_map.num_non_empty_tiles;
 }
 
-void Map_Draw(Image* image, Image* texture)
-{
-	const int rect_width = (image->width / s_map.width);
-	const int rect_height = image->height / s_map.height;
-
-	for (int x = 0; x < s_map.width; x++)
-	{
-		for (int y = 0; y < s_map.height; y++)
-		{
-			TileID tile = Map_GetTile(x, y);
-
-			if (tile == EMPTY_TILE) continue;
-
-			int cx = x * rect_width;
-			int cy = y * rect_height;
-
-			
-
-			unsigned char color[4] = { 255, 255, 255, 255 };
-
-		
-
-			//unsigned char* color = Image_Get(texture, x, y);
-
-			if (!color)
-			{
-				continue;
-			}
-
-			//Video_DrawRectangle(image, cx, cy, rect_width, rect_height, color);
-
-			//top line
-			Video_DrawLine(image, cx, cy, cx + rect_width, cy, color);
-
-			//right line
-			Video_DrawLine(image, cx + rect_width, cy, cx + rect_width, cy + rect_height, color);
-
-			//bottom line
-			Video_DrawLine(image, cx, cy + rect_height, cx + rect_width, cy + rect_height, color);
-
-			//left line
-			Video_DrawLine(image, cx, cy, cx, cy + rect_height, color);
-
-		}
-	}
-}
-
 void Map_DrawObjects(Image* image, float* depth_buffer, DrawSpan* draw_spans, float p_x, float p_y, float p_dirX, float p_dirY, float p_planeX, float p_planeY)
 {
-	int num_sprites = 0;
-
 	for (int i = 0; i < s_map.num_sorted_objects; i++)
 	{
 		ObjectID id = s_map.sorted_list[i];
@@ -990,26 +1120,18 @@ void Map_DrawObjects(Image* image, float* depth_buffer, DrawSpan* draw_spans, fl
 
 		Sprite* sprite = &object->sprite;
 
-		//calc distance to point
-		sprite->dist = (p_x - sprite->x) * (p_x - sprite->x) + (p_y - sprite->y) * (p_y - sprite->y);
-
-		s_spritePointers[num_sprites++] = &object->sprite;
-
 		Render_AddSpriteToQueue(sprite);
-	}
-
-	//sort by distance
-	//qsort(s_spritePointers, num_sprites, sizeof(Sprite*), CompareSpriteDistances);
-
-	//draw all sprites
-	for (int i = 0; i < num_sprites; i++)
-	{
-		//Video_DrawSprite(image, s_spritePointers[i], depth_buffer, draw_spans, p_x, p_y, p_dirX, p_dirY, p_planeX, p_planeY);
 	}
 }
 
 void Map_UpdateObjects(float delta)
 {
+	if (s_map.dirty_temp_light)
+	{
+		Map_ClearTempLight();
+		s_map.dirty_temp_light = false;
+	}
+
 	float view_x, view_y, dir_x, dir_y, dir_z, plane_x, plane_y;
 	Player_GetView(&view_x, &view_y, &dir_x, &dir_y, &plane_x, &plane_y);
 
@@ -1053,6 +1175,7 @@ void Map_UpdateObjects(float delta)
 		case OT__TRIGGER:
 		case OT__PICKUP:
 		case OT__THING:
+		case OT__LIGHT:
 		{
 			if (obj->sprite.img && obj->sprite.frame_count > 0 && obj->sprite.anim_speed_scale > 0)
 			{
@@ -1109,8 +1232,6 @@ void Map_UpdateObjects(float delta)
 
 void Map_DeleteObject(Object* obj)
 {
-	//Render_FinishAndStall();
-
 	Render_LockObjectMutex();
 
 	ObjectID id = obj->id;
@@ -1135,8 +1256,6 @@ void Map_DeleteObject(Object* obj)
 	Map_UpdateSortedList();
 
 	Render_UnlockObjectMutex();
-
-	//Render_Resume();
 }
 
 void Map_Destruct()
@@ -1144,10 +1263,11 @@ void Map_Destruct()
 	//keep old level index
 	int old_level_index = s_map.level_index;
 
-	if(s_map.tiles) free(s_map.tiles);
-	if(s_map.object_tiles) free(s_map.object_tiles);
+	if (s_map.tiles) free(s_map.tiles);
+	if (s_map.floor_tiles) free(s_map.floor_tiles);
+	if (s_map.object_tiles) free(s_map.object_tiles);
 	if (s_map.light_tiles) free(s_map.light_tiles);
-	
+
 	memset(&s_map, 0, sizeof(s_map));
 
 	s_map.level_index = old_level_index;

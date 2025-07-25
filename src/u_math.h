@@ -94,17 +94,101 @@ inline void Math_XY_Normalize(float* x, float* y)
 	*x = v[0];
 	*y = v[1];
 }
-
-inline void Math_XY_Bounce(float x, float y, float nx, float ny, float* r_x, float* r_y)
+inline void Math_XY_Reflect(float x, float y, float nx, float ny, float* r_x, float* r_y)
 {
 	float normal_dot = Math_XY_Dot(nx, ny, x, y);
 
-	*r_x = x - 2.0 * normal_dot * nx;
-	*r_y = y - 2.0 * normal_dot * ny;
-
-	Math_XY_Normalize(r_x, r_y);
+	*r_x = 2.0 * nx * normal_dot - x;
+	*r_y = 2.0 * ny * normal_dot - y;
 }
 
+inline void Math_XY_Bounce(float x, float y, float nx, float ny, float* r_x, float* r_y)
+{
+	float t_x = *r_x;
+	float t_y = *r_y;
+
+	Math_XY_Reflect(x, y, nx, ny, &t_x, &t_y);
+
+	*r_x = -t_x;
+	*r_y = -t_y;
+}
+inline bool Math_TraceLineVsBox(float p_x, float p_y, float p_endX, float p_endY, float box_x, float box_y, float size, float* r_interX, float* r_interY, float* r_dist)
+{
+	float minDistance = 0;
+	float maxDistance = 1;
+	int axis = 0;
+	float sign = 0;
+
+	float box[2][2];
+
+	box[0][0] = box_x - size;
+	box[0][1] = box_y - size;
+
+	box[1][0] = box_x + size;
+	box[1][1] = box_y + size;
+
+	for (int i = 0; i < 2; i++)
+	{
+		float box_begin = box[0][i];
+		float box_end = box[1][i];
+		float trace_start = (i == 0) ? p_x : p_y;
+		float trace_end = (i == 0) ? p_endX : p_endY;
+
+		float c_min = 0;
+		float c_max = 0;
+		float c_sign = 0;
+
+		if (trace_start < trace_end)
+		{
+			if (trace_start > box_end || trace_end < box_begin)
+			{
+				return false;
+			}
+
+			float trace_length = trace_end - trace_start;
+			c_min = (trace_start < box_begin) ? ((box_begin - trace_start) / trace_length) : 0;
+			c_max = (trace_end > box_end) ? ((box_end - trace_start) / trace_length) : 1;
+			c_sign = -1.0;
+		}
+		else
+		{
+			if (trace_end > box_end || trace_start < box_begin)
+			{
+				return false;
+			}
+
+			float trace_length = trace_end - trace_start;
+			c_min = (trace_start > box_end) ? ((box_end - trace_start) / trace_length) : 0;
+			c_max = (trace_end < box_begin) ? ((box_begin - trace_start) / trace_length) : 1;
+			c_sign = 1.0;
+		}
+
+		if (c_min > minDistance)
+		{
+			minDistance = c_min;
+			axis = i;
+			sign = c_sign;
+		}
+		if (c_max < maxDistance)
+		{
+			maxDistance = c_max;
+		}
+		if (maxDistance < minDistance)
+		{
+			return false;
+		}
+	}
+
+	if (r_interX) *r_interX = p_x + (p_endX - p_x) * minDistance;
+	if (r_interY) *r_interY = p_y + (p_endY - p_y) * minDistance;
+
+	if (r_dist)
+	{
+		*r_dist = minDistance;
+	}
+
+	return true;
+}
 
 uint32_t Math_NearestPowerOf2(uint32_t num);
 

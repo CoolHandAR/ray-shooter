@@ -21,6 +21,8 @@
 
 #define MIN_LIGHT 20
 
+#define MAX_RENDER_SCALE 3
+
 typedef uint16_t TileID;
 typedef int16_t ObjectID;
 
@@ -57,18 +59,20 @@ typedef struct
 typedef struct
 {
 	Image wall_textures;
-	Image weapon_textures;
-	Image decoration_textures;
-	Image pickup_textures;
+	Image shotgun_texture;
+	Image pistol_texture;
+	Image machinegun_texture;
+	Image object_textures;
 	Image missile_textures;
 	Image imp_texture;
 	Image pinky_texture;
-	Image minigun_texture;
+	Image bruiser_texture;
 	Image sky_texture;
 	Image particle_textures;
 	Image menu_texture;
 } GameAssets;
 
+Game* Game_GetGame();
 bool Game_Init();
 void Game_Exit();
 bool Game_LoadAssets();
@@ -89,6 +93,16 @@ void Menu_Draw(Image* image, FontData* fd);
 void Menu_LevelEnd_Update(float delta, int secret_goal, int secret_max, int monster_goal, int monster_max);
 void Menu_LevelEnd_Draw(Image* image, FontData* fd);
 
+typedef enum
+{
+	GUN__NONE,
+
+	GUN__PISTOL,
+	GUN__MACHINEGUN,
+	GUN__SHOTGUN,
+
+	GUN__MAX
+} GunType;
 
 typedef enum
 {
@@ -128,11 +142,17 @@ typedef enum
 	//monsters
 	SUB__MOB_IMP,
 	SUB__MOB_PINKY,
+	SUB__MOB_BRUISER,
 
 	//pickups
 	SUB__PICKUP_SMALLHP,
-	SUB__PICKUP_MEDIUMHP,
+	SUB__PICKUP_BIGHP,
 	SUB__PICKUP_AMMO,
+	SUB__PICKUP_ROCKETS,
+	SUB__PICKUP_INVUNERABILITY,
+	SUB__PICKUP_QUAD_DAMAGE,
+	SUB__PICKUP_SHOTGUN,
+	SUB__PICKUP_MACHINEGUN,
 
 	//missiles
 	SUB__MISSILE_FIREBALL,
@@ -152,9 +172,15 @@ typedef enum
 	//SPECIAL TILE
 	SUB__SPECIAL_TILE_FAKE,
 	
+	//LIGHTS
+	SUB__LIGHT_TORCH,
+	SUB__LIGHT_LAMP,
+
 	//THINGS
-	SUB__THING_TORCH,
-	SUB__THING_BARREL,
+	SUB__THING_RED_COLLUMN,
+	SUB__THING_BLUE_COLLUMN,
+	SUB__THING_RED_FLAG,
+	SUB__THING_BLUE_FLAG,
 
 	//PARTICLES
 	SUB__PARTICLE_BLOOD,
@@ -171,7 +197,9 @@ typedef enum
 	OBJ_FLAG__JUST_HIT = 1 << 2,
 
 	OBJ_FLAG__DOOR_NEVER_CLOSE = 1 << 3,
-	OBJ_FLAG__TRIGGER_SWITCHED_ON = 1 << 4
+	OBJ_FLAG__TRIGGER_SWITCHED_ON = 1 << 4,
+
+	OBJ_FLAG__GODMODE = 1 << 5,
 } ObjectFlag;
 
 typedef struct
@@ -203,6 +231,9 @@ typedef struct
 	//for doors and general debugging
 	struct Object* col_object;
 
+	//for tiled objects
+	TileID gid;
+
 	//for monsters and doors
 	float move_timer;
 	float attack_timer;
@@ -219,12 +250,16 @@ typedef struct
 	uint8_t light_west;
 	uint8_t light_south;
 	uint8_t light_east;
+	uint8_t temp_light;
 } LightTile;
 
 typedef struct
 {
 	int width, height;
 	TileID* tiles;
+
+	int floor_width, floor_height;
+	TileID* floor_tiles;
 
 	LightTile* light_tiles;
 
@@ -245,22 +280,26 @@ typedef struct
 	int level_index;
 
 	int num_non_empty_tiles;
+
+	bool dirty_temp_light;
 } Map;
 
+void Map_SetDirtyTempLight();
 int Map_GetLevelIndex();
 Map* Map_GetMap();
 Object* Map_NewObject(ObjectType type);
 bool Map_Load(const char* filename);
 TileID Map_GetTile(int x, int y);
+TileID Map_GetFloorTile(int x, int y);
 Object* Map_GetObjectAtTile(int x, int y);
 LightTile* Map_GetLightTile(int x, int y);
+void Map_SetTempLight(int x, int y, int size, int light);
 TileID Map_Raycast(float p_x, float p_y, float dir_x, float dir_y, float* r_hitX, float* r_hitY);
 void Map_GetSize(int* r_width, int* r_height);
 void Map_GetSpawnPoint(int* r_x, int* r_y);
 bool Map_UpdateObjectTile(Object* obj);
 int Map_GetTotalTiles();
 int Map_GetTotalNonEmptyTiles();
-void Map_Draw(Image* image, Image* texture);
 void Map_DrawObjects(Image* image, float* depth_buffer, DrawSpan* draw_spans, float p_x, float p_y, float p_dirX, float p_dirY, float p_planeX, float p_planeY);
 void Map_UpdateObjects(float delta);
 void Map_DeleteObject(Object* obj);
@@ -268,7 +307,7 @@ void Map_Destruct();
 
 
 //Player stuff
-void Player_Init();
+void Player_Init(int keep);
 Object* Player_GetObj();
 void Player_Hurt(float dir_x, float dir_y);
 void Player_HandlePickup(Object* obj);
@@ -290,6 +329,9 @@ bool Move_Unstuck(Object* obj);
 bool Move_Teleport(Object* obj, float x, float y);
 bool Move_Door(Object* obj, float delta);
 
+//Checking
+bool Check_IsBlockingTile(int x, int y);
+
 //Missile stuff
 void Missile_Update(Object* obj, float delta);
 void Missile_DirectHit(Object* obj, Object* target);
@@ -298,8 +340,8 @@ void Missile_Explode(Object* obj);
 //Trace stuff
 bool Trace_LineVsObject(float p_x, float p_y, float p_endX, float p_endY, Object* obj, float* r_interX, float* r_interY);
 
-//Shooting stuff
-void Gun_Shoot(Object* obj, float p_x, float p_y, float p_dirX, float p_dirY);
+typedef void (*IsVisibleFun)(int center_x, int center_y, int x, int y);
+void Trace_ShadowCast(int x, int y, int radius, IsVisibleFun is_visible_fun);
 
 //Object stuff
 void Object_Hurt(Object* obj, Object* src_obj, int damage);
@@ -327,4 +369,5 @@ void Monster_Spawn(Object* obj);
 void Monster_SetState(Object* obj, int state);
 void Monster_Update(Object* obj, float delta);
 void Monster_Imp_FireBall(Object* obj);
+void Monster_Bruiser_FireBall(Object* obj);
 void Monster_Melee(Object* obj);

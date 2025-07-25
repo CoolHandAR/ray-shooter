@@ -13,6 +13,7 @@ typedef struct
 	int num_free_list;
 	int num_sounds;
 	int max_index;
+	float master_volume;
 } SoundCore;
 
 static SoundCore sound_core;
@@ -147,7 +148,13 @@ bool Sound_createGroup(unsigned p_flags, ma_sound_group* r_group)
 
 void Sound_setMasterVolume(float volume)
 {
+	sound_core.master_volume = volume;
 	ma_engine_set_volume(&sound_core.sound_engine, volume);
+}
+
+float Sound_GetMasterVolume()
+{
+	return sound_core.master_volume;
 }
 
 void Sound_EmitWorldTemp(int type, float x, float y, float dir_x, float dir_y)

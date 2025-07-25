@@ -53,6 +53,125 @@ static float y_diags[DIR_MAX] =
 	0
 };
 
+typedef enum
+{
+	MSOUND__ALERT,
+	MSOUND__HIT,
+	MSOUND__DEATH,
+	MSOUND__ATTACK
+} MonsterSoundState;
+
+static void Monster_EmitSound(Object* obj, MonsterSoundState state)
+{
+	int index = -1;
+
+	switch (state)
+	{
+	case MSOUND__ALERT:
+	{
+		switch (obj->type)
+		{
+		case SUB__MOB_IMP:
+		{
+			index = SOUND__IMP_ALERT;
+			break;
+		}
+		case SUB__MOB_PINKY:
+		{
+			index = SOUND__PINKY_ALERT;
+			break;
+		}
+		case SUB__MOB_BRUISER:
+		{
+			index = SOUND__BRUISER_ALERT;
+			break;
+		}
+		default:
+			break;
+		}
+		break;
+	}
+	case MSOUND__HIT:
+	{
+		switch (obj->type)
+		{
+		case SUB__MOB_IMP:
+		{
+			index = SOUND__IMP_HIT;
+			break;
+		}
+		case SUB__MOB_PINKY:
+		{
+			index = SOUND__PINKY_HIT;
+			break;
+		}
+		case SUB__MOB_BRUISER:
+		{
+			index = SOUND__BRUISER_HIT;
+			break;
+		}
+		default:
+			break;
+		}
+		break;
+	}
+	case MSOUND__DEATH:
+	{
+		switch (obj->type)
+		{
+		case SUB__MOB_IMP:
+		{
+			index = SOUND__IMP_DIE;
+			break;
+		}
+		case SUB__MOB_PINKY:
+		{
+			index = SOUND__PINKY_DIE;
+			break;
+		}
+		case SUB__MOB_BRUISER:
+		{
+			index = SOUND__BRUISER_DIE;
+			break;
+		}
+		default:
+			break;
+		}
+		break;
+	}
+	case MSOUND__ATTACK:
+	{
+		switch (obj->type)
+		{
+		case SUB__MOB_IMP:
+		{
+			index = SOUND__IMP_ATTACK;
+			break;
+		}
+		case SUB__MOB_PINKY:
+		{
+			index = SOUND__PINKY_ATTACK;
+			break;
+		}
+		case SUB__MOB_BRUISER:
+		{
+			index = SOUND__BRUISER_ATTACK;
+			break;
+		}
+		default:
+			break;
+		}
+		break;
+	}
+	default:
+		break;
+	}
+
+	if (index >= 0)
+	{
+		Sound_EmitWorldTemp(index, obj->x, obj->y, obj->dir_x, obj->dir_y);
+	}
+}
 
 static MonsterAnimState Monster_GetAnimState(Object* obj)
 {
@@ -242,17 +361,7 @@ static void Monster_UpdateSpriteAnimation(Object* obj, float delta)
 		if (s->frame == anim_info->action_frame && s->action_loop != s->loops)
 		{
 			//play action sound
-			int index = 0;
-			if (obj->sub_type == SUB__MOB_IMP)
-			{
-				index = SOUND__IMP_ATTACK;
-			}
-			else if (obj->sub_type == SUB__MOB_PINKY)
-			{
-				index = SOUND__PINKY_ATTACK;
-			}
-
-			Sound_EmitWorldTemp(index, obj->x, obj->y, obj->dir_x, obj->dir_y);
+			Monster_EmitSound(obj, MSOUND__ATTACK);
 
 			anim_info->action_fun(obj);
 			s->action_loop = s->loops;
@@ -528,16 +637,7 @@ static void Monster_LookForTarget(Object* monster)
 	int index = 0;
 
 	//play alert sound
-	if (monster->sub_type == SUB__MOB_IMP)
-	{
-		index = SOUND__IMP_ALERT;
-	}
-	else if (monster->sub_type == SUB__MOB_PINKY)
-	{
-		index = SOUND__PINKY_ALERT;
-	}
-
-	Sound_EmitWorldTemp(index, monster->x, monster->y, monster->dir_x, monster->dir_y);
+	Monster_EmitSound(monster, MSOUND__ALERT);
 }
 
 void Monster_Spawn(Object* obj)
@@ -558,9 +658,16 @@ void Monster_Spawn(Object* obj)
 	{
 		obj->sprite.img = &assets->pinky_texture;
 	}
+	else if (obj->sub_type == SUB__MOB_BRUISER)
+	{
+		obj->sprite.img = &assets->bruiser_texture;
+	}
 
+	obj->sprite.scale_x = monster_info->sprite_scale;
+	obj->sprite.scale_y = monster_info->sprite_scale;
+	obj->sprite.v_offset = monster_info->sprite_v_offset;
 	obj->hp = monster_info->spawn_hp;
-	obj->size = 1;
+	obj->size = 0.5;
 	obj->speed = monster_info->speed;
 
 	Monster_SetState(obj, MS__IDLE);
@@ -579,18 +686,9 @@ void Monster_SetState(Object* obj, int state)
 		int index = 0;
 
 		//play hit sound
-		if (obj->sub_type == SUB__MOB_IMP)
-		{
-			index = SOUND__IMP_HIT;
-		}
-		else if (obj->sub_type == SUB__MOB_PINKY)
-		{
-			index = SOUND__PINKY_HIT;
-		}
+		Monster_EmitSound(obj, MSOUND__HIT);
 
-		Sound_EmitWorldTemp(index, obj->x, obj->y, obj->dir_x, obj->dir_y);
-
-		if (obj->sub_type == SUB__MOB_PINKY)
+		if (obj->sub_type == SUB__MOB_PINKY || obj->sub_type == SUB__MOB_BRUISER)
 		{
 			return;
 		}
@@ -605,16 +703,7 @@ void Monster_SetState(Object* obj, int state)
 		int index = 0;
 
 		//play death sound
-		if (obj->sub_type == SUB__MOB_IMP)
-		{
-			index = SOUND__IMP_DIE;
-		}
-		else if (obj->sub_type == SUB__MOB_PINKY)
-		{
-			index = SOUND__PINKY_DIE;
-		}
-
-		Sound_EmitWorldTemp(index, obj->x, obj->y, obj->dir_x, obj->dir_y);
+		Monster_EmitSound(obj, MSOUND__DEATH);
 
 		//make sure to forget the target
 		obj->target = NULL;
@@ -719,6 +808,30 @@ void Monster_Imp_FireBall(Object* obj)
 	missile->owner = obj;
 }
 
+void Monster_Bruiser_FireBall(Object* obj)
+{
+	Object* target = obj->target;
+
+	if (!target)
+	{
+		return;
+	}
+
+	Monster_FaceTarget(obj);
+
+	for (int i = -2; i < 2; i++)
+	{
+		Sound_EmitWorldTemp(SOUND__FIREBALL_THROW, obj->x, obj->y, obj->dir_x, obj->dir_y);
+
+		Object* missile = Object_Missile(obj, target);
+		
+		missile->dir_x += i * 0.1;
+		missile->dir_y += i * 0.1;
+
+		missile->owner = obj;
+	}
+}
+
 void Monster_Melee(Object* obj)
 {
 	Object* target = obj->target;
@@ -732,8 +845,14 @@ void Monster_Melee(Object* obj)
 	{
 		return;
 	}
+	MonsterInfo* info = Info_GetMonsterInfo(obj->type);
+
+	if (info->melee_damage <= 0)
+	{
+		return;
+	}
 
 	Monster_FaceTarget(obj);
-		
-	Object_Hurt(target, obj, 1);
+
+	Object_Hurt(target, obj, info->melee_damage);
 }

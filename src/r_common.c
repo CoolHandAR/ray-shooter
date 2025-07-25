@@ -622,3 +622,10 @@ void Sprite_UpdateAnimation(Sprite* sprite, float delta)
 	}
 }
 
+void Sprite_ResetAnimState(Sprite* sprite)
+{
+	sprite->playing = false;
+	sprite->frame = 0;
+	sprite->_anim_frame_progress = 0;
+}
+

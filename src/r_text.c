@@ -286,8 +286,8 @@ void Text_DrawStr(Image* image, const FontData* font_data, float _x, float _y, f
 		const double x2 = glyph_data->atlas_bounds.right * scale_x;
 		const double y2 = glyph_data->atlas_bounds.bottom * scale_y;
 
-		float x_step = (glyph_data->plane_bounds.right - glyph_data->plane_bounds.left) * scale_x;
-		float y_offset = (glyph_data->plane_bounds.bottom - glyph_data->plane_bounds.top) * scale_y;
+		float x_step = (glyph_data->atlas_bounds.right - glyph_data->atlas_bounds.left) * scale_x;
+		float y_offset = (glyph_data->atlas_bounds.bottom - glyph_data->atlas_bounds.top) * scale_y;
 
 		for (int tx = x1; tx < x2; tx++)
 		{

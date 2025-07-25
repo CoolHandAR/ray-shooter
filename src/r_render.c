@@ -7,11 +7,12 @@
 #include <main.h>
 #include <windows.h>
 
-#define NUM_RENDER_THREADS 8
+#define NUM_RENDER_THREADS 10
 #define MAX_DRAWSPRITES_PER_THREAD 10
 #define MAX_DRAWSPRITES 1024
 #define MAX_SCREENSPRITES 10
 #define MAX_SCREENTEXTS 10
+
 
 typedef enum
 {
@@ -25,7 +26,8 @@ typedef enum
 	TWT__NONE,
 
 	TWT__RAYCAST,
-	TWT__DRAW_SPRITES
+	TWT__DRAW_SPRITES,
+	TWT__SHADER
 } ThreadWorkType;
 
 typedef struct
@@ -83,6 +85,8 @@ typedef struct
 
 	int main_thread_draw_sprite_indices[MAX_DRAWSPRITES];
 	int num_main_thread_draw_sprites;
+
+	ShaderFun fullscreen_shader_fun;
 
 	CRITICAL_SECTION object_mutex;
 	HANDLE main_thread_active_event;
@@ -200,6 +204,11 @@ static void Render_ThreadLoop(RenderThread* thread)
 			}
 
 			thread->num_draw_sprites = 0;
+			break;
+		}
+		case TWT__SHADER:
+		{
+			Video_Shade(&s_renderCore.framebuffer, s_renderCore.fullscreen_shader_fun, thread->x_start, 0, thread->x_end, s_renderCore.h);
 			break;
 		}
 		default:
@@ -381,6 +390,28 @@ static void Render_ThreadAssignDrawSprites()
 
 }
 
+static void Render_SetupClearBuffer(int width, int height)
+{
+	//split video
+	unsigned char floor_color[4] = { 128, 128, 128, 255 };
+	unsigned char ceilling_color[4] = { 68, 125, 128, 255 };
+	unsigned char black_color[4] = { 0, 0, 0, 255 };
+	for (int x = 0; x < width; x++)
+	{
+		for (int y = 0; y < height; y++)
+		{
+			if (y < height / 2)
+			{
+				Image_Set2(&s_renderCore.clear_framebuffer, x, y, ceilling_color);
+			}
+			else
+			{
+				Image_Set2(&s_renderCore.clear_framebuffer, x, y, black_color);
+			}
+		}
+	}
+}
+
 void Render_WindowCallback(GLFWwindow* window, int width, int height)
 {
 	s_renderCore.win_w = width;
@@ -388,17 +419,31 @@ void Render_WindowCallback(GLFWwindow* window, int width, int height)
 	s_renderCore.size_changed = true;
 }
 
-void Render_Init(int width, int height)
+bool Render_Init(int width, int height)
 {
 	memset(&s_renderCore, 0, sizeof(RenderCore));
 
 	Video_Setup();
 
-	Image_Create(&s_renderCore.framebuffer, width, height, 4);
+	if (!Text_LoadFont("assets/myFont.json", "assets/myFont.png", &s_renderCore.font_data))
+	{
+		return false;
+	}
 
-	Image_Create(&s_renderCore.clear_framebuffer, width, height, 4);
+	if (!Image_Create(&s_renderCore.framebuffer, width, height, 4))
+	{
+		return false;
+	}
 
-	Image_Create(&s_renderCore.wall_buffer, width, height, 4);
+	if (!Image_Create(&s_renderCore.clear_framebuffer, width, height, 4))
+	{
+		return false;
+	}
+
+	if (!Image_Create(&s_renderCore.wall_buffer, width, height, 4))
+	{
+		return false;
+	}
 
 	glfwMakeContextCurrent(NULL);
 
@@ -425,9 +470,10 @@ void Render_Init(int width, int height)
 
 		thr->thread_handle = CreateThread(NULL, 0, Render_ThreadLoop, thr, 0, &render_thread_id);
 	}
+
 	Render_ResizeWindow(width, height);
 
-	Text_LoadFont("assets/myFont.json", "assets/myFont.png", &s_renderCore.font_data);
+	return true;
 }
 
 void Render_ShutDown()
@@ -485,6 +531,26 @@ void Render_Loop()
 	Render_View(view_x, view_y, view_dir_x, view_dir_y, view_plane_x, view_plane_y);
 }
 
+void Render_LockThreadsMutex()
+{
+	for (int i = 0; i < NUM_RENDER_THREADS; i++)
+	{
+		RenderThread* thr = &s_renderCore.threads[i];
+
+		Render_ThreadMutexLock(thr);
+	}
+}
+
+void Render_UnlockThreadsMutex()
+{
+	for (int i = 0; i < NUM_RENDER_THREADS; i++)
+	{
+		RenderThread* thr = &s_renderCore.threads[i];
+
+		Render_ThreadMutexUnlock(thr);
+	}
+}
+
 void Render_LockObjectMutex()
 {
 	EnterCriticalSection(&s_renderCore.object_mutex);
@@ -531,6 +597,11 @@ void Render_AddScreenSpriteToQueue(Sprite* sprite)
 	}
 
 	s_renderCore.screen_sprites[s_renderCore.num_screen_sprites++] = sprite;
+}
+
+void Render_QueueFullscreenShader(ShaderFun shader_fun)
+{
+	s_renderCore.fullscreen_shader_fun = shader_fun;
 }
 
 
@@ -597,24 +668,7 @@ void Render_ResizeWindow(int width, int height)
 
 	memset(s_renderCore.draw_spans, 0, sizeof(DrawSpan) * width);
 
-	//split video
-	unsigned char floor_color[4] = { 128, 128, 128, 255 };
-	unsigned char ceilling_color[4] = { 68, 125, 128, 255 };
-	unsigned char black_color[4] = { 0, 0, 0, 255 };
-	for (int x = 0; x < width; x++)
-	{
-		for (int y = 0; y < height; y++)
-		{
-			if (y < height / 2)
-			{
-				Image_Set2(&s_renderCore.clear_framebuffer, x, y, ceilling_color);
-			}
-			else
-			{
-				Image_Set2(&s_renderCore.clear_framebuffer, x, y, black_color);
-			}
-		}
-	}
+	Render_SetupClearBuffer(width, height);
 
 	s_renderCore.w = width;
 	s_renderCore.h = height;
@@ -698,17 +752,18 @@ void Render_View(float x, float y, float dir_x, float dir_y, float plane_x, floa
 		}
 		//draw screen sprites
 		Game_DrawHud(&s_renderCore.framebuffer, &s_renderCore.font_data);
-		if (s_renderCore.num_screen_sprites > 0)
-		{
-			for (int i = 0; i < s_renderCore.num_screen_sprites; i++)
-			{
-				Sprite* sprite = s_renderCore.screen_sprites[i];
-				//Video_DrawScreenSprite(&s_renderCore.framebuffer, sprite);
-			}
-		}
 		
 		Render_UnlockObjectMutex();
 	}
+	if (s_renderCore.fullscreen_shader_fun)
+	{
+		Render_WaitForAllThreads();
+
+		Render_SetWorkStateForAllThreads(TWT__SHADER);
+
+		Render_WaitForAllThreads();
+	}
+
 	if (redraw_sprites || redraw_walls)
 	{
 		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, s_renderCore.w, s_renderCore.h, GL_RGBA, GL_UNSIGNED_BYTE, s_renderCore.framebuffer.data);
@@ -728,6 +783,7 @@ void Render_View(float x, float y, float dir_x, float dir_y, float plane_x, floa
 	s_renderCore.num_draw_sprites = 0;
 	s_renderCore.num_screen_sprites = 0;
 	s_renderCore.num_main_thread_draw_sprites = 0;
+	s_renderCore.fullscreen_shader_fun = NULL;
 }
 
 void Render_GetWindowSize(int* r_width, int* r_height)
@@ -753,16 +809,15 @@ void Render_SetRenderScale(int scale)
 	{
 		scale = 1;
 	}
-	else if (scale > 3)
+	else if (scale > MAX_RENDER_SCALE)
 	{
-		scale = 3;
+		scale = MAX_RENDER_SCALE;
 	}
 	
 	s_renderCore.scale = scale;
 
 	Render_ResizeWindow(BASE_RENDER_WIDTH * scale, BASE_RENDER_HEIGHT * scale);
 }
-
 float Render_GetWindowAspect()
 {
 	if (s_renderCore.win_h <= 0)
