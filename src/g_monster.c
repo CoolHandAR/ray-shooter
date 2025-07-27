@@ -7,6 +7,8 @@
 #include <math.h>
 #include <stdlib.h>
 
+#define MONSTER_MELEE_CHECK 5
+
 static DirEnum opposite_dirs[DIR_MAX] =
 {
 	//NONE			//NORTH
@@ -424,7 +426,7 @@ static bool Monster_CheckIfMeleePossible(Object* obj)
 
 	float dist = (obj->x - target->x) * (obj->x - target->x) + (obj->y - target->y) * (obj->y - target->y);
 
-	if (dist <= 5)
+	if (dist <= MONSTER_MELEE_CHECK)
 	{
 		return true;
 	}
@@ -520,7 +522,8 @@ static void Monster_NewChaseDir(Object* obj, float delta)
 
 	int r = rand() % 100;
 
-	if (rand > 200 || abs(dir_y) > abs(dir_x))
+	//attempt to swap directions
+	if (r > 50 || abs(dir_y) > abs(dir_x))
 	{
 		int t = dirs[0];
 		dirs[0] = dirs[1];
@@ -559,6 +562,7 @@ static void Monster_NewChaseDir(Object* obj, float delta)
 		}
 	}
 
+	//try random directions
 	if (rand() & 1)
 	{
 		for (int i = DIR_NONE + 1; i < DIR_MAX; i++)
@@ -803,7 +807,7 @@ void Monster_Imp_FireBall(Object* obj)
 
 	Monster_FaceTarget(obj);
 	
-	Object* missile = Object_Missile(obj, target);
+	Object* missile = Object_Missile(obj, target, SUB__MISSILE_FIREBALL);
 
 	missile->owner = obj;
 }
@@ -823,7 +827,7 @@ void Monster_Bruiser_FireBall(Object* obj)
 	{
 		Sound_EmitWorldTemp(SOUND__FIREBALL_THROW, obj->x, obj->y, obj->dir_x, obj->dir_y);
 
-		Object* missile = Object_Missile(obj, target);
+		Object* missile = Object_Missile(obj, target, SUB__MISSILE_FIREBALL);
 		
 		missile->dir_x += i * 0.1;
 		missile->dir_y += i * 0.1;

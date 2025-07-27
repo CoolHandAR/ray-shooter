@@ -2,9 +2,10 @@
 #define UTILITY_MATH
 #pragma once
 
-#include <cglm/cglm.h>
+#include <float.h>
+#include <stdlib.h>
 #include <math.h>
-
+#include <stdbool.h>
 
 #define Math_PI 3.1415926535897932384626433833
 #define CMP_EPSILON 0.00001
@@ -59,6 +60,11 @@ inline float Math_move_towardf(float from, float to, float delta)
 	return fabsf(to - from) <= delta ? to : from + Math_sign_float(to - from) * delta;
 }
 
+inline float Math_lerp(float from, float to, float t) 
+{
+	return from + t * (to - from);
+}
+
 inline long double Math_fract2(long double x)
 {
 	return x - floor(x);
@@ -76,23 +82,32 @@ inline float Math_XY_Dot(float x1, float y1, float x2, float y2)
 
 inline float Math_XY_Length(float x, float y)
 {
-	vec2 v;
-	v[0] = x;
-	v[1] = y;
+	float dot = Math_XY_Dot(x, y, x, y);
 
-	return glm_vec2_norm(v);
+	return sqrtf(dot);
 }
 
 inline void Math_XY_Normalize(float* x, float* y)
 {
-	vec2 v;
-	v[0] = *x;
-	v[1] = *y;
+	float x_local = *x;
+	float y_local = *y;
 
-	glm_vec2_normalize(v);
+	float len = Math_XY_Length(x_local, y_local);
 
-	*x = v[0];
-	*y = v[1];
+	if (len == 0.0f) 
+	{
+		*x = 0;
+		*y = 0;
+		return;
+	}
+	
+	float n = 1.0 / len;
+
+	x_local = x_local * n;
+	y_local = y_local * n;
+
+	*x = x_local;
+	*y = y_local;
 }
 inline void Math_XY_Reflect(float x, float y, float nx, float ny, float* r_x, float* r_y)
 {
@@ -190,7 +205,6 @@ inline bool Math_TraceLineVsBox(float p_x, float p_y, float p_endX, float p_endY
 	return true;
 }
 
-uint32_t Math_NearestPowerOf2(uint32_t num);
 
 inline bool Math_RayIntersectsPlane(float x, float y, float ray_x, float ray_y, float normal_x, float normal_y, float d)
 {

@@ -1,7 +1,10 @@
+#ifndef G_INFO_H
+#define G_INFO_H
 #pragma once
 
 //Lazy hardcoded game data
 #include <stddef.h>
+#include "g_common.h"
 
 extern void Monster_Bruiser_FireBall(struct Object* obj);
 extern void Monster_Imp_FireBall(struct Object* obj);
@@ -298,10 +301,12 @@ static const MonsterInfo MONSTER_INFO[] =
 
 typedef struct
 {
+	int type;
 	AnimInfo anim_info[2];
 	int speed;
 	float size;
 	int explosion_damage;
+	int explosion_size;
 	int direct_damage;
 } MissileInfo;
 
@@ -309,6 +314,7 @@ static const MissileInfo MISSILE_INFO[] =
 {
 	//SIMPLE FIREBALL
 	{
+		SUB__MISSILE_FIREBALL,
 		//ANIM
 		{
 			//FLY
@@ -320,8 +326,26 @@ static const MissileInfo MISSILE_INFO[] =
 		8, //SPEED
 		0.25, //SIZE,
 		0, //EXPLOSION DAMAGE
+		0, //EXPLOSION SIZE
 		10, //DIRECT HIT DAMAGE
-	}
+	},
+	//MEGA SHOT
+	{
+		SUB__MISSILE_MEGASHOT,
+		//ANIM
+		{
+			//FLY
+			NULL, 0, 0, 1, 2, 1,
+
+			//EXPLODE
+			NULL, 0, 2, 1, 3, 0,
+		},
+		8, //SPEED
+		0.25, //SIZE,
+		50, //EXPLOSION DAMAGE
+		20, //EXPLOSION SIZE
+		100, //DIRECT HIT DAMAGE
+	},
 };
 
 typedef enum
@@ -349,6 +373,7 @@ typedef enum
 	SOUND__SHOTGUN_SHOOT,
 	SOUND__PISTOL_SHOOT,
 	SOUND__MACHINEGUN_SHOOT,
+	SOUND__DEVASTATOR_SHOOT,
 	SOUND__NO_AMMO,
 
 	SOUND__DOOR_ACTION,
@@ -362,6 +387,7 @@ typedef enum
 	
 	SOUND__PICKUP_HP,
 	SOUND__PICKUP_SPECIAL,
+	SOUND__PICKUP_AMMO,
 
 	SOUND__MAX
 } SoundType;
@@ -422,6 +448,9 @@ static const char* SOUND_INFO[SOUND__MAX] =
 	//MACHINEGUN SHOOT
 	"assets/machinegun_shoot.wav",
 
+	//DEVASTATOR SHOOT
+	"assets/devastator_shoot.wav",
+
 	//NO AMMO
 	"assets/no_ammo.wav",
 
@@ -444,12 +473,16 @@ static const char* SOUND_INFO[SOUND__MAX] =
 	"assets/pickup_hp.wav",
 
 	//PICKUP SPECIAL
-	"assets/pickup_special.wav"
+	"assets/pickup_special.wav",
+
+	//PICKUP AMMO
+	"assets/pickup_ammo.wav",
 };
 
 
 typedef struct
 {	
+	int type;
 	int damage;
 	int spread;
 	float cooldown;
@@ -458,20 +491,22 @@ typedef struct
 	float scale;
 } GunInfo;
 
-static const GunInfo GUN_INFOs[] =
+static const GunInfo GUN_INFOs[GUN__MAX] =
 {
-	//SHOTGUN
+	//NONE
 	{
-		4, //DMG
-		1, //SPREAD
-		1.25, //CD,
-		0.05, //SCREEN X
-		0.2, //SCREEN Y
-		1.2, //SCALE
+		GUN__NONE,
+		0, //DMG
+		0, //SPREAD
+		0, //CD,
+		0, //SCREEN X
+		0, //SCREEN Y
+		0, //SCALE
 	},
 	//PISTOL
 	{
-		10, //DMG
+		GUN__PISTOL,
+		12, //DMG
 		1, //SPREAD
 		0.3, //CD,
 		0.55, //SCREEN X
@@ -480,6 +515,7 @@ static const GunInfo GUN_INFOs[] =
 	},
 	//MACHINE GUN
 	{
+		GUN__MACHINEGUN,
 		15, //DMG
 		1, //SPREAD
 		0.2, //CD,
@@ -487,10 +523,31 @@ static const GunInfo GUN_INFOs[] =
 		0.18, //SCREEN Y
 		1.5, //SCALE
 	},
+	//SHOTGUN
+	{
+		GUN__SHOTGUN,
+		6, //DMG
+		1, //SPREAD
+		1.25, //CD,
+		0.05, //SCREEN X
+		0.2, //SCREEN Y
+		1.2, //SCALE
+	},
+	//DEVASTATOR
+	{
+		GUN__DEVASTATOR,
+		0, //DMG
+		1, //SPREAD
+		1.70, //CD,
+		0.25, //SCREEN X
+		0.4, //SCREEN Y
+		1.5, //SCALE
+	},
 };
 
 typedef struct
 {	
+	int type;
 	AnimInfo anim_info;
 	float anim_speed;
 	float sprite_offset_x;
@@ -501,6 +558,7 @@ static const ObjectInfo OBJECT_INFOS[] =
 {
 	//TORCH
 	{
+		SUB__LIGHT_TORCH,
 		//ANIM
 		{
 			NULL, 0, 0, 1, 4, 1,
@@ -511,6 +569,7 @@ static const ObjectInfo OBJECT_INFOS[] =
 	},
 	//LAMP
 	{
+		SUB__LIGHT_LAMP,
 		//ANIM
 		{
 			NULL, 0, 0, 0, 4, 1,
@@ -521,6 +580,7 @@ static const ObjectInfo OBJECT_INFOS[] =
 	},
 	//SMALL HP
 	{
+		SUB__PICKUP_SMALLHP,
 		//ANIM
 		{
 			NULL, 0, 0, 2, 0, 0,
@@ -531,6 +591,7 @@ static const ObjectInfo OBJECT_INFOS[] =
 	},
 	//BIG HP
 	{
+		SUB__PICKUP_BIGHP,
 		//ANIM
 		{
 			NULL, 0, 1, 2, 0, 0,
@@ -541,6 +602,7 @@ static const ObjectInfo OBJECT_INFOS[] =
 	},
 	//RED COLLUMN
 	{
+		SUB__THING_RED_COLLUMN,
 		//ANIM
 		{
 			NULL, 0, 0, 4, 0, 0,
@@ -551,6 +613,7 @@ static const ObjectInfo OBJECT_INFOS[] =
 	},
 	//BLUE COLLUMN
 	{
+		SUB__THING_BLUE_COLLUMN,
 		//ANIM
 		{
 			NULL, 0, 1, 4, 0, 0,
@@ -561,6 +624,7 @@ static const ObjectInfo OBJECT_INFOS[] =
 	},
 	//RED FLAG
 	{
+		SUB__THING_RED_FLAG,
 		//ANIM
 		{
 			NULL, 0, 2, 4, 0, 0,
@@ -571,6 +635,7 @@ static const ObjectInfo OBJECT_INFOS[] =
 	},
 	//BLUE FLAG
 	{
+		SUB__THING_BLUE_FLAG,
 		//ANIM
 		{
 			NULL, 0, 3, 4, 0, 0,
@@ -581,6 +646,7 @@ static const ObjectInfo OBJECT_INFOS[] =
 	},
 	//TELEPORTER
 	{
+		SUB__TARGET_TELEPORT,
 		//ANIM
 		{
 			NULL, 0, 0, 3, 4, 1,
@@ -591,6 +657,7 @@ static const ObjectInfo OBJECT_INFOS[] =
 	},
 	//INVUNERABILITY PICKUP
 	{
+		SUB__PICKUP_INVUNERABILITY,
 		//ANIM
 		{
 			NULL, 0, 0, 5, 4, 1,
@@ -601,6 +668,7 @@ static const ObjectInfo OBJECT_INFOS[] =
 	},
 	//QUAD PICKUP
 	{
+		SUB__PICKUP_QUAD_DAMAGE,
 		//ANIM
 		{
 			NULL, 0, 0, 6, 4, 1,
@@ -611,6 +679,7 @@ static const ObjectInfo OBJECT_INFOS[] =
 	},
 	//SHOTGUN PICKUP
 	{
+		SUB__PICKUP_SHOTGUN,
 		//ANIM
 		{
 			NULL, 0, 0, 7, 0, 0,
@@ -621,6 +690,7 @@ static const ObjectInfo OBJECT_INFOS[] =
 	},
 	//MACHINE PICKUP
 	{
+		SUB__PICKUP_MACHINEGUN,
 		//ANIM
 		{
 			NULL, 0, 1, 7, 0, 0,
@@ -631,9 +701,32 @@ static const ObjectInfo OBJECT_INFOS[] =
 	},
 	//AMMO PICKUP
 	{
+		SUB__PICKUP_AMMO,
 		//ANIM
 		{
 			NULL, 0, 2, 2, 0, 0,
+		},
+		0.0, //ANIM SPEED
+		0.5, //SPRITE OFFSET X
+		0.5, //SPRITE OFFSET Y
+	},
+	//DEVASTATOR PICKUP
+	{
+		SUB__PICKUP_DEVASTATOR,
+		//ANIM
+		{
+			NULL, 0, 2, 7, 0, 0,
+		},
+		0.0, //ANIM SPEED
+		0.5, //SPRITE OFFSET X
+		0.5, //SPRITE OFFSET Y
+	},
+	//ROCKET PICKUP
+	{
+		SUB__PICKUP_ROCKETS,
+		//ANIM
+		{
+			NULL, 0, 3, 2, 0, 0,
 		},
 		0.0, //ANIM SPEED
 		0.5, //SPRITE OFFSET X
@@ -643,6 +736,7 @@ static const ObjectInfo OBJECT_INFOS[] =
 
 typedef struct
 {
+	int type;
 	float radius;
 	float attenuation;
 	float scale;
@@ -652,12 +746,14 @@ static const LightInfo LIGHT_INFOS[] =
 {
 	//TORCH
 	{
+		SUB__LIGHT_TORCH,
 		32, //radius
 		1.0, //attenuation
 		1 // scale
 	},
 	//LAMP
 	{
+		SUB__LIGHT_LAMP,
 		12, //radius
 		1.5, //attenuation
 		1 // scale
@@ -666,6 +762,7 @@ static const LightInfo LIGHT_INFOS[] =
 
 typedef struct
 {
+	int type;
 	AnimInfo anim_info;
 	float time;
 	float sprite_scale;
@@ -675,6 +772,7 @@ static const ParticleInfo PARTICLE_INFOS[] =
 {
 	//BLOOD SPLATTER
 	{
+		SUB__PARTICLE_BLOOD,
 		//ANIM INFO
 		{
 			NULL, 0, 0, 0, 3, 0,
@@ -684,6 +782,7 @@ static const ParticleInfo PARTICLE_INFOS[] =
 	},
 	//WALL HIT
 	{
+		SUB__PARTICLE_WALL_HIT,
 		//ANIM INFO
 		{
 			NULL, 0, 0, 1, 4, 0,
@@ -700,6 +799,7 @@ static const ParticleInfo PARTICLE_INFOS[] =
 #define PICKUP_ROCKETS_GIVE 12
 #define PICKUP_SHOTGUN_AMMO_GIVE 12
 #define PICKUP_MACHINEGUN_AMMO_GIVE 50
+#define PICKUP_DEVASTATOR_AMMO_GIVE 12
 #define PICKUP_INVUNERABILITY_TIME 15
 #define PICKUP_QUAD_TIME 15
 
@@ -708,11 +808,12 @@ MonsterInfo* Info_GetMonsterInfo(int type);
 ObjectInfo* Info_GetObjectInfo(int type, int sub_type);
 LightInfo* Info_GetLightInfo(int sub_type);
 ParticleInfo* Info_GetParticleInfo(int sub_type);
+MissileInfo* Info_GetMissileInfo(int sub_type);
 
 static const char* LEVELS[] =
 {
 	"test.json",
-
-	"test2.json",
+	"test2.json"
 };
 
+#endif

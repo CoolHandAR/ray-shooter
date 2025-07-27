@@ -1,12 +1,13 @@
+#ifndef G_COMMON_H
+#define G_COMMON_H
 #pragma once
 
 #include <stdint.h>
 #include <stdbool.h>
-
 #include <GLFW/glfw3.h>
 
 #include "r_common.h"
-#include "miniaudio/miniaudio.h"
+
 
 #define EMPTY_TILE 0
 #define DOOR_TILE 2
@@ -23,7 +24,7 @@
 
 #define MAX_RENDER_SCALE 3
 
-typedef uint16_t TileID;
+typedef int8_t TileID;
 typedef int16_t ObjectID;
 
 typedef enum
@@ -33,6 +34,7 @@ typedef enum
 	GS__MENU,
 	GS__LEVEL,
 	GS__LEVEL_END,
+	GS__FINALE,
 	GS__EXIT
 } GameState;
 
@@ -62,6 +64,7 @@ typedef struct
 	Image shotgun_texture;
 	Image pistol_texture;
 	Image machinegun_texture;
+	Image devastator_texture;
 	Image object_textures;
 	Image missile_textures;
 	Image imp_texture;
@@ -92,6 +95,8 @@ void Menu_Update(float delta);
 void Menu_Draw(Image* image, FontData* fd);
 void Menu_LevelEnd_Update(float delta, int secret_goal, int secret_max, int monster_goal, int monster_max);
 void Menu_LevelEnd_Draw(Image* image, FontData* fd);
+void Menu_Finale_Update(float delta);
+void Menu_Finale_Draw(Image* image, FontData* fd);
 
 typedef enum
 {
@@ -100,6 +105,7 @@ typedef enum
 	GUN__PISTOL,
 	GUN__MACHINEGUN,
 	GUN__SHOTGUN,
+	GUN__DEVASTATOR,
 
 	GUN__MAX
 } GunType;
@@ -143,6 +149,7 @@ typedef enum
 	SUB__MOB_IMP,
 	SUB__MOB_PINKY,
 	SUB__MOB_BRUISER,
+	SUB__MOB_MAX,
 
 	//pickups
 	SUB__PICKUP_SMALLHP,
@@ -153,39 +160,51 @@ typedef enum
 	SUB__PICKUP_QUAD_DAMAGE,
 	SUB__PICKUP_SHOTGUN,
 	SUB__PICKUP_MACHINEGUN,
+	SUB__PICKUP_DEVASTATOR,
+	SUB__PICKUP_MAX,
 
 	//missiles
 	SUB__MISSILE_FIREBALL,
+	SUB__MISSILE_MEGASHOT,
+	SUB__MISSILE_MAX,
 
 	//TRIGGER
 	SUB__TRIGGER_ONCE,
 	SUB__TRIGGER_CHANGELEVEL,
 	SUB__TRIGGER_SECRET,
 	SUB__TRIGGER_SWITCH,
+	SUB__TRIGGER_MAX,
 
 	//TARGET
 	SUB__TARGET_TELEPORT,
+	SUB__TARGET_MAX,
 
 	//DOOR
 	SUB__DOOR_VERTICAL,
+	SUB__DOOR_MAX,
 
 	//SPECIAL TILE
 	SUB__SPECIAL_TILE_FAKE,
-	
+	SUB__SPECIAL_TILE_MAX,
+
 	//LIGHTS
 	SUB__LIGHT_TORCH,
 	SUB__LIGHT_LAMP,
+	SUB__LIGHT_MAX,
 
 	//THINGS
 	SUB__THING_RED_COLLUMN,
 	SUB__THING_BLUE_COLLUMN,
 	SUB__THING_RED_FLAG,
 	SUB__THING_BLUE_FLAG,
+	SUB__THING_MAX,
 
 	//PARTICLES
 	SUB__PARTICLE_BLOOD,
 	SUB__PARTICLE_WALL_HIT,
+	SUB__PARTICLE_MAX,
 
+	SUB__MAX
 } SubType;
 
 typedef enum
@@ -261,6 +280,9 @@ typedef struct
 	int floor_width, floor_height;
 	TileID* floor_tiles;
 
+	int ceil_width, ceil_height;
+	TileID* ceil_tiles;
+
 	LightTile* light_tiles;
 
 	int num_objects;
@@ -291,6 +313,7 @@ Object* Map_NewObject(ObjectType type);
 bool Map_Load(const char* filename);
 TileID Map_GetTile(int x, int y);
 TileID Map_GetFloorTile(int x, int y);
+TileID Map_GetCeilTile(int x, int y);
 Object* Map_GetObjectAtTile(int x, int y);
 LightTile* Map_GetLightTile(int x, int y);
 void Map_SetTempLight(int x, int y, int size, int light);
@@ -351,7 +374,7 @@ bool Object_CheckLineToTile(Object* obj, float target_x, float target_y);
 bool Object_CheckLineToTile2(Object* obj, float target_x, float target_y);
 bool Object_CheckLineToTarget(Object* obj, Object* target);
 bool Object_CheckSight(Object* obj, Object* target);
-Object* Object_Missile(Object* obj, Object* target);
+Object* Object_Missile(Object* obj, Object* target, int type);
 bool Object_HandleObjectCollision(Object* obj, Object* collision_obj);
 bool Object_HandleSwitch(Object* obj);
 void Object_HandleTriggers(Object* obj, Object* trigger);
@@ -371,3 +394,5 @@ void Monster_Update(Object* obj, float delta);
 void Monster_Imp_FireBall(Object* obj);
 void Monster_Bruiser_FireBall(Object* obj);
 void Monster_Melee(Object* obj);
+
+#endif

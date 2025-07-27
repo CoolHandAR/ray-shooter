@@ -14,7 +14,7 @@
 #define Y_TEXT_START 0.15
 #define Y_TEXT_STEP 0.25
 
-#define X_HELPTEXT_START 0.1
+#define X_HELPTEXT_START 0.05
 #define Y_HELPTEXT_START 0.1
 #define X_HELPTEXT_STEP 0.23
 #define Y_HELPTEXT_STEP 0.15
@@ -280,7 +280,7 @@ void Menu_Draw(Image* image, FontData* fd)
 		Menu_HelpText(image, fd, true, "1 = PISTOL");
 		Menu_HelpText(image, fd, false, "2 = SHOTGUN");
 		Menu_HelpText(image, fd, false, "3 = MACHINE GUN");
-
+		Menu_HelpText(image, fd, false, "4 = DEVASTATOR");
 		break;
 	}
 	default:
@@ -338,4 +338,24 @@ void Menu_LevelEnd_Draw(Image* image, FontData* fd)
 
 	Text_DrawColor(image, fd, 0.25, 0.2, 1, 1, 255, 255, 255, 255, "SECRETS %i/%i", (int)menu_core.secret_counter, menu_core.secret_max);
 	Text_DrawColor(image, fd, 0.25, 0.5, 1, 1, 255, 255, 255, 255, "KILLS %i/%i", (int)menu_core.monster_counter, menu_core.monster_max);
+}
+
+void Menu_Finale_Update(float delta)
+{
+	if (menu_core.input_timer > 0) menu_core.input_timer = 0;
+
+	if (Menu_CheckInput(GLFW_KEY_ENTER, GLFW_PRESS))
+	{
+		Game_Reset(true);
+		Game_SetState(GS__LEVEL);
+	}
+}
+
+void Menu_Finale_Draw(Image* image, FontData* fd)
+{
+	Video_DrawScreenTexture(image, &Game_GetAssets()->menu_texture, 0, 0, 2, 2);
+
+	Text_DrawColor(image, fd, 0.15, 0.2, 1, 1, 255, 255, 255, 255, "THE END \n");
+	Text_DrawColor(image, fd, 0.15, 0.5, 1, 1, 255, 255, 255, 255, "THANKS FOR PLAYING \n");
+	Text_DrawColor(image, fd, 0.15, 0.7, 1, 1, 255, 255, 255, 255, "PRESS ENTER TO CONTINUE \n");
 }

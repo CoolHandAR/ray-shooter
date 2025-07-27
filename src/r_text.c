@@ -289,9 +289,9 @@ void Text_DrawStr(Image* image, const FontData* font_data, float _x, float _y, f
 		float x_step = (glyph_data->atlas_bounds.right - glyph_data->atlas_bounds.left) * scale_x;
 		float y_offset = (glyph_data->atlas_bounds.bottom - glyph_data->atlas_bounds.top) * scale_y;
 
-		for (int tx = x1; tx < x2; tx++)
+		for (float tx = x1; tx < x2; tx += 1)
 		{
-			for (int ty = y1; ty < y2; ty++)
+			for (float ty = y1; ty < y2; ty += 1)
 			{
 				unsigned char* color = Image_Get(&font_data->font_image, tx * d_scale_x, ty * d_scale_y);
 
@@ -304,9 +304,9 @@ void Text_DrawStr(Image* image, const FontData* font_data, float _x, float _y, f
 
 				unsigned char* im = Image_Get(image, x, y);
 
-				im[0] = glm_smoothinterp(im[0], r, opacity);
-				im[1] = glm_smoothinterp(im[1], g, opacity);
-				im[2] = glm_smoothinterp(im[2], b, opacity);
+				im[0] = Math_lerp(im[0], r, opacity);
+				im[1] = Math_lerp(im[1], g, opacity);
+				im[2] = Math_lerp(im[2], b, opacity);
 				im[3] = a;
 
 				y += font_data->metrics_data.em_size;

@@ -161,6 +161,11 @@ void Image_Destruct(Image* img)
 
 }
 
+void Image_Clear(Image* img, int c)
+{
+	memset(img->data, (int)c, sizeof(unsigned char) * img->width * img->height * img->numChannels);
+}
+
 void Image_Set(Image* img, int x, int y, unsigned char r, unsigned char g, unsigned char b, unsigned char a)
 {
 	if (!img->data || x < 0 || y < 0 || x >= img->width || y >= img->height)

@@ -2,6 +2,8 @@
 
 #include "game_info.h"
 #include "main.h"
+#include "sound.h"
+#include <stdio.h>
 
 static Game game;
 static GameAssets assets;
@@ -15,18 +17,29 @@ bool Game_Init()
 {
 	memset(&game, 0, sizeof(game));
 
-	game.state = GS__LEVEL;
-
 	if (!Game_LoadAssets())
 	{
 		return false;
 	}
+	
+	Game_SetState(GS__MENU);
+
+	//load the first map
+	if (!Map_Load(LEVELS[0]))
+	{
+		printf("ERROR:: Failed to load map !\n");
+		return false;
+	}
+
+	Player_Init(false);
 
 	return true;
 }
 
 void Game_Exit()
 {
+	Map_Destruct();
+
 	Game_DestructAssets();
 }
 
@@ -47,6 +60,10 @@ bool Game_LoadAssets()
 		return false;
 	}
 	if (!Image_CreateFromPath(&assets.machinegun_texture, "assets/machine.png"))
+	{
+		return false;
+	}
+	if (!Image_CreateFromPath(&assets.devastator_texture, "assets/devastator.png"))
 	{
 		return false;
 	}
@@ -97,11 +114,14 @@ bool Game_LoadAssets()
 	assets.pistol_texture.h_frames = 5;
 	assets.pistol_texture.v_frames = 1;
 
+	assets.devastator_texture.h_frames = 7;
+	assets.devastator_texture.v_frames = 2;
+
 	assets.imp_texture.h_frames = 9;
 	assets.imp_texture.v_frames = 9;
 
 	assets.missile_textures.h_frames = 5;
-	assets.missile_textures.v_frames = 1;
+	assets.missile_textures.v_frames = 2;
 
 	assets.pinky_texture.h_frames = 8;
 	assets.pinky_texture.v_frames = 6;
@@ -122,6 +142,7 @@ bool Game_LoadAssets()
 	Image_GenerateFrameInfo(&assets.particle_textures);
 	Image_GenerateFrameInfo(&assets.machinegun_texture);
 	Image_GenerateFrameInfo(&assets.pistol_texture);
+	Image_GenerateFrameInfo(&assets.devastator_texture);
 
 	Image_GenerateMipmaps(&assets.wall_textures);
 
@@ -141,6 +162,7 @@ void Game_DestructAssets()
 	Image_Destruct(&assets.menu_texture);
 	Image_Destruct(&assets.machinegun_texture);
 	Image_Destruct(&assets.pistol_texture);
+	Image_Destruct(&assets.devastator_texture);
 }
 
 void Game_Update(float delta)
@@ -165,6 +187,11 @@ void Game_Update(float delta)
 	case GS__LEVEL_END:
 	{
 		Menu_LevelEnd_Update(delta, game.prev_secrets_found, game.prev_total_secrets, game.prev_monsters_killed, game.prev_total_monsters);
+		break;
+	}
+	case GS__FINALE:
+	{
+		Menu_Finale_Update(delta);
 		break;
 	}
 	default:
@@ -192,6 +219,11 @@ void Game_Draw(Image* image, FontData* fd, float* depth_buffer, DrawSpan* draw_s
 	case GS__LEVEL_END:
 	{
 		Menu_LevelEnd_Draw(image, fd);
+		break;
+	}
+	case GS__FINALE:
+	{
+		Menu_Finale_Draw(image, fd);
 		break;
 	}
 	default:
@@ -223,6 +255,10 @@ void Game_DrawHud(Image* image, FontData* fd)
 	{
 		break;
 	}
+	case GS__FINALE:
+	{
+		break;
+	}
 	default:
 		break;
 	}
@@ -230,6 +266,8 @@ void Game_DrawHud(Image* image, FontData* fd)
 
 void Game_SetState(GameState state)
 {
+	Render_FinishAndStall();
+
 	if (state != game.state)
 	{
 		Render_RedrawWalls();
@@ -237,6 +275,8 @@ void Game_SetState(GameState state)
 	}
 
 	game.state = state;
+
+	Render_Resume();
 }
 
 GameState Game_GetState()
@@ -268,20 +308,22 @@ void Game_ChangeLevel()
 
 	map->level_index++;
 
-	if (map->level_index > 1)
+	int arr_size = sizeof(LEVELS) / sizeof(LEVELS[0]);
+
+	//finale
+	if (map->level_index >= arr_size)
 	{
-		map->level_index = 1;
+		Game_SetState(GS__FINALE);
 	}
+	else
+	{
+		const char* level = LEVELS[map->level_index];
 
-	const char* level = LEVELS[map->level_index];
+		Map_Load(level);
+		Player_Init(true);
 
-	Map_Load(level);
-	Player_Init(true);
-
-	Game_SetState(GS__LEVEL_END);
-
-	Render_RedrawWalls();
-	Render_RedrawSprites();
+		Game_SetState(GS__LEVEL_END);
+	}
 
 	//resume
 	Render_Resume();
@@ -291,6 +333,11 @@ void Game_Reset(bool to_start)
 {
 	//stall render threads
 	Render_FinishAndStall();
+
+	game.total_secrets = 0;
+	game.total_monsters = 0;
+	game.secrets_found = 0;
+	game.monsters_killed = 0;
 
 	int index = 0;
 
@@ -314,7 +361,7 @@ void Game_Reset(bool to_start)
 
 void Game_SecretFound()
 {
-	Sound_Emit(SOUND__SECRET_FOUND);
+	Sound_Emit(SOUND__SECRET_FOUND, 0.25);
 
 	game.secret_timer = 1;
 	game.secrets_found++;

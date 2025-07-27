@@ -660,7 +660,7 @@ void Object_Hurt(Object* obj, Object* src_obj, int damage)
 	}
 }
 
-Object* Object_Missile(Object* obj, Object* target)
+Object* Object_Missile(Object* obj, Object* target, int type)
 {
 	Object* missile = Map_NewObject(OT__MISSILE);
 
@@ -681,7 +681,8 @@ Object* Object_Missile(Object* obj, Object* target)
 		dir_y = -point_y;
 	}
 
-	missile->sub_type = SUB__MISSILE_FIREBALL;
+	missile->owner = obj;
+	missile->sub_type = type;
 	missile->x = (obj->x) + dir_x * 2;
 	missile->y = (obj->y) + dir_y * 2;
 	missile->dir_x = dir_x;

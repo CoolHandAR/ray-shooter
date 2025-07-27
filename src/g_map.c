@@ -6,7 +6,6 @@
 #include <assert.h>
 #include <math.h>
 #include <cjson/cJSON.h>
-#include <cglm/cglm.h>
 #include "u_math.h"
 #include "game_info.h"
 
@@ -566,6 +565,68 @@ bool Map_Load(const char* filename)
 			s_map.floor_height = h;
 
 		}
+		//ceil layer
+		else if (!strcmp(cJSON_GetStringValue(type), "tilelayer") && !strcmp(cJSON_GetStringValue(name), "ceil_layer"))
+		{
+			cJSON* width = cJSON_GetObjectItem(layer, "width");
+			cJSON* height = cJSON_GetObjectItem(layer, "height");
+
+			if (!width || !height || !cJSON_IsNumber(width) || !cJSON_IsNumber(height))
+			{
+				printf("ERROR::Failed to load map!\n");
+				result = false;
+				goto cleanup;
+			}
+
+			int w = cJSON_GetNumberValue(width);
+			int h = cJSON_GetNumberValue(height);
+
+			cJSON* tile_data = cJSON_GetObjectItem(layer, "data");
+
+			if (!tile_data || !cJSON_IsArray(tile_data))
+			{
+				printf("ERROR::Failed to load map!\n");
+				result = false;
+				goto cleanup;
+			}
+
+			//allocate tile buffer
+			s_map.ceil_tiles = calloc(h * w, sizeof(TileID));
+
+			if (!s_map.ceil_tiles)
+			{
+				printf("ERROR::Failed to load map!\n");
+				result = false;
+				goto cleanup;
+			}
+
+			int index = 0;
+			//parse each tile
+			for (int y = 0; y < h; y++)
+			{
+				for (int x = 0; x < w; x++)
+				{
+					cJSON* tile = cJSON_GetArrayItem(tile_data, index);
+
+					if (!tile || !cJSON_IsNumber(tile))
+					{
+						printf("ERROR::Failed to load map!\n");
+						result = false;
+						goto cleanup;
+					}
+
+					int tile_number = cJSON_GetNumberValue(tile);
+
+					s_map.ceil_tiles[x + y * w] = tile_number;
+
+					index++;
+				}
+			}
+
+			s_map.ceil_width = w;
+			s_map.ceil_height = h;
+
+		}
 		//parse objects
 		else if (!strcmp(cJSON_GetStringValue(type), "objectgroup"))
 		{
@@ -690,6 +751,10 @@ bool Map_Load(const char* filename)
 				else if (!strcmp(type_value, "pickup_machinegun"))
 				{
 					map_object = Object_Spawn(OT__PICKUP, SUB__PICKUP_MACHINEGUN, obj_x, obj_y);
+				}
+				else if (!strcmp(type_value, "pickup_devastator"))
+				{
+					map_object = Object_Spawn(OT__PICKUP, SUB__PICKUP_DEVASTATOR, obj_x, obj_y);
 				}
 				else if (!strcmp(type_value, "trigger") || !strcmp(type_value, "trigger_once") || !strcmp(type_value, "trigger_switch"))
 				{
@@ -850,6 +915,20 @@ TileID Map_GetFloorTile(int x, int y)
 	assert(index < s_map.floor_width * s_map.floor_height);
 
 	return s_map.floor_tiles[index];
+}
+
+TileID Map_GetCeilTile(int x, int y)
+{
+	if (x < 0 || y < 0 || x >= s_map.floor_width || y >= s_map.floor_height || !s_map.floor_tiles)
+	{
+		return EMPTY_TILE + 1;
+	}
+
+	size_t index = x + y * s_map.floor_width;
+
+	assert(index < s_map.floor_width * s_map.floor_height);
+
+	return s_map.ceil_tiles[index];
 }
 
 Object* Map_GetObjectAtTile(int x, int y)
@@ -1265,6 +1344,7 @@ void Map_Destruct()
 
 	if (s_map.tiles) free(s_map.tiles);
 	if (s_map.floor_tiles) free(s_map.floor_tiles);
+	if (s_map.ceil_tiles) free(s_map.ceil_tiles);
 	if (s_map.object_tiles) free(s_map.object_tiles);
 	if (s_map.light_tiles) free(s_map.light_tiles);
 

@@ -428,7 +428,7 @@ void Missile_Update(Object* obj, float delta)
 {
 	bool exploding = obj->flags & OBJ_FLAG__EXPLODING;
 
-	const MissileInfo* missile_info = &MISSILE_INFO[0];
+	const MissileInfo* missile_info = Info_GetMissileInfo(obj->sub_type);
 	const AnimInfo* anim_info = &missile_info->anim_info[(int)exploding];
 	
 	obj->sprite.anim_speed_scale = 1.0;
@@ -489,10 +489,8 @@ void Missile_DirectHit(Object* obj, Object* target)
 
 	if (obj->owner != target)
 	{
-		const MissileInfo* missile_info = &MISSILE_INFO[0];
+		const MissileInfo* missile_info = Info_GetMissileInfo(obj->sub_type);
 		Object_Hurt(target, obj, missile_info->direct_damage);
-
-		obj->flags |= OBJ_FLAG__EXPLODING;
 	}
 }
 
@@ -504,12 +502,12 @@ void Missile_Explode(Object* obj)
 		return;
 	}
 
-	const MissileInfo* missile_info = &MISSILE_INFO[0];
+	const MissileInfo* missile_info = Info_GetMissileInfo(obj->sub_type);
 
 	//cause damage if any 
 	if (missile_info->explosion_damage > 0)
 	{
-		Explosion(obj, 5, missile_info->explosion_damage);
+		Explosion(obj, missile_info->explosion_size, missile_info->explosion_damage);
 	}
 
 	//play sound

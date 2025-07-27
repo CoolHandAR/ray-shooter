@@ -37,7 +37,7 @@ static int Sound_GetNewIndex()
 		id = sound_core.free_list[sound_core.num_free_list - 1];
 		sound_core.num_free_list--;
 	}
-	else
+	else if(sound_core.num_sounds < MAX_SOUNDS)
 	{
 		id = sound_core.num_sounds++;
 	}
@@ -50,19 +50,28 @@ static int Sound_GetNewIndex()
 
 static void Sound_FreeUnusedSounds()
 {
-	int max_index = 0;
+	int num_sounds = 0;
+
 	for (int i = 0; i < sound_core.max_index; i++)
 	{
 		Sound* snd = &sound_core.sounds[i];
 
-		if (snd->fire_and_forget)
+		if (snd->fire_and_forget && snd->alive)
 		{
 			if (!ma_sound_is_playing(&snd->snd))
 			{
 				Sound_DeleteSound(i);
+				continue;
 			}
 		}
+		
+		if (i > num_sounds)
+		{
+			num_sounds = i;
+		}
 	}
+
+	sound_core.num_sounds = num_sounds;
 }
 
 static Sound* Sound_NewSound(int* r_index)
@@ -105,7 +114,10 @@ void Sound_DeleteSound(int id)
 {
 	Sound* sound = &sound_core.sounds[id];
 
-	ma_sound_uninit(&sound->snd);
+	if (sound->alive)
+	{
+		ma_sound_uninit(&sound->snd);
+	}
 
 	memset(sound, 0, sizeof(Sound));
 
@@ -212,7 +224,6 @@ int Sound_EmitWorld(int type, float x, float y, float dir_x, float dir_y)
 		return -1;
 	}
 
-	snd->fire_and_forget = true;
 	snd->alive = true;
 	snd->type = type;
 
@@ -253,8 +264,13 @@ int Sound_Preload(int type)
 	return id;
 }
 
-void Sound_Emit(int type)
+void Sound_Emit(int type, float volume)
 {
+	if (type < 0 || type >= SOUND__MAX)
+	{
+		return;
+	}
+
 	const char* sound_file = SOUND_INFO[type];
 
 	if (!sound_file)
@@ -262,7 +278,21 @@ void Sound_Emit(int type)
 		return;
 	}
 
-	ma_engine_play_sound(&sound_core.sound_engine, sound_file, NULL);
+	Sound* snd = Sound_NewSound(NULL);
+
+	if (!snd)
+	{
+		return;
+	}
+
+	snd->type = type;
+	snd->fire_and_forget = true;
+	snd->alive = true;
+
+	Sound_load(sound_file, 0, &snd->snd);
+	
+	ma_sound_set_volume(&snd->snd, volume);
+	ma_sound_start(&snd->snd);
 }
 
 void Sound_Set(int id, float x, float y, float dir_x, float dir_y)

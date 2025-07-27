@@ -2,13 +2,13 @@
 
 #include <string.h>
 #include <math.h>
-#include <cglm/cglm.h>
 
 #include "sound.h"
 #include "game_info.h"
 #include "main.h"
 #include "u_math.h"
 
+#define PLAYER_SIZE 0.4
 #define PLAYER_MAX_HP 100
 #define PLAYER_MAX_AMMO 100
 #define PLAYER_OVERHEAL_HP_TICK_TIME 0.25
@@ -52,6 +52,14 @@ typedef struct
 
 static PlayerData player;
 
+static void Player_GiveAll()
+{
+	memset(player.gun_check, true, sizeof(player.gun_check));
+
+	player.buck_ammo = PLAYER_MAX_AMMO;
+	player.bullet_ammo = PLAYER_MAX_AMMO;
+	player.rocket_ammo = PLAYER_MAX_AMMO;
+}
 
 static void Shader_Hurt(Image* img, int x, int y, int tx, int ty)
 {
@@ -61,11 +69,11 @@ static void Shader_Hurt(Image* img, int x, int y, int tx, int ty)
 	float strenght_x = (float)center_x / (float)img->half_width;
 	float strenght_y = (float)center_y / (float)img->half_height;
 
-	float lerp = glm_lerp(0, strenght_x, strenght_y) * player.hurt_timer;
+	float lerp = Math_lerp(0, strenght_x, strenght_y) * player.hurt_timer;
 
 	unsigned char* sample = Image_Get(img, x, y);
 
-	sample[0] = glm_lerp(sample[0], 255, lerp);
+	sample[0] = Math_lerp(sample[0], 255, lerp);
 }
 static void Shader_HurtSimple(Image* img, int x, int y, int tx, int ty)
 {
@@ -306,6 +314,31 @@ static void Player_ShootGun()
 		player.buck_ammo--;
 		break;
 	}
+	case GUN__DEVASTATOR:
+	{
+		//no ammo
+		if (player.rocket_ammo <= 0)
+		{
+			return;
+		}
+
+		static float DEV_ANGLE = 0.1;
+
+		for (int i = 0; i < 2; i++)
+		{
+			Object* missile = Object_Missile(player.obj, NULL, SUB__MISSILE_MEGASHOT);
+			
+			float offset = (float)i * DEV_ANGLE;
+
+			missile->x += (offset) - DEV_ANGLE;
+			missile->y += (offset) - DEV_ANGLE;
+			missile->dir_x += offset;
+			missile->dir_y += offset;
+		}
+		
+		player.rocket_ammo--;
+		break;
+	}
 	default:
 		break;
 	}
@@ -317,25 +350,42 @@ static void Player_ShootGun()
 	player.gun_timer = player.gun_info->cooldown;
 
 	//PLAY SOUND
+	int sound_index = -1;
+	float volume = 1.0;
+
 	switch (player.gun)
 	{
 	case GUN__PISTOL:
 	{
-		Sound_EmitWorldTemp(SOUND__PISTOL_SHOOT, player.obj->x, player.obj->y, 0, 0);
+		volume = 0.08;
+		sound_index = SOUND__PISTOL_SHOOT;
 		break;
 	}
 	case GUN__SHOTGUN:
 	{
-		Sound_EmitWorldTemp(SOUND__SHOTGUN_SHOOT, player.obj->x, player.obj->y, 0, 0);
+		volume = 0.1;
+		sound_index = SOUND__SHOTGUN_SHOOT;
 		break;
 	}
 	case GUN__MACHINEGUN:
 	{
-		Sound_EmitWorldTemp(SOUND__MACHINEGUN_SHOOT, player.obj->x, player.obj->y, 0, 0);
+		volume = 0.1;
+		sound_index = SOUND__MACHINEGUN_SHOOT;
+		break;
+	}
+	case GUN__DEVASTATOR:
+	{
+		volume = 0.1;
+		sound_index = SOUND__DEVASTATOR_SHOOT;
 		break;
 	}
 	default:
 		break;
+	}
+
+	if (sound_index >= 0)
+	{
+		Sound_Emit(sound_index, volume);
 	}
 }
 
@@ -366,7 +416,7 @@ static void Player_UpdateListener()
 	ma_engine* sound_engine = Sound_GetEngine();
 
 	ma_engine_listener_set_position(sound_engine, 0, player.obj->x, 0, player.obj->y);
-	ma_engine_listener_set_direction(sound_engine, 0, -player.obj->dir_x, 0, -player.obj->dir_y);
+	ma_engine_listener_set_direction(sound_engine, 0, player.obj->dir_x, 0, player.obj->dir_y);
 	Sound_Set(player.gun_sound_id, player.obj->x, player.obj->y, player.obj->dir_x, player.obj->dir_y);
 }
 
@@ -443,7 +493,11 @@ static void Player_ProcessInput(GLFWwindow* window)
 	{
 		Player_SetGun(GUN__MACHINEGUN);
 	}
-	//escape
+	else if (glfwGetKey(window, GLFW_KEY_4) == GLFW_PRESS)
+	{
+		Player_SetGun(GUN__DEVASTATOR);
+	}
+
 	if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
 	{
 		Game_SetState(GS__MENU);
@@ -451,7 +505,7 @@ static void Player_ProcessInput(GLFWwindow* window)
 
 	if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
 	{
-		Player_PressSwitch();
+		//Player_PressSwitch();
 	}
 
 	player.move_x = move_x;
@@ -493,6 +547,12 @@ static void Player_SetupGunSprites()
 			sprite->anim_speed_scale = 1;
 			break;
 		}
+		case GUN__DEVASTATOR:
+		{
+			sprite->img = &assets->devastator_texture;
+			sprite->anim_speed_scale = 1;
+			break;
+		}
 		default:
 			break;
 		}
@@ -512,6 +572,7 @@ void Player_Init(int keep)
 	bool guns_check[GUN__MAX];
 	int buck_ammo = player.buck_ammo;
 	int bullet_ammo = player.bullet_ammo;
+	int gun = player.gun;
 
 	if (keep)
 	{
@@ -529,6 +590,7 @@ void Player_Init(int keep)
 		memcpy(player.gun_check, guns_check, sizeof(guns_check));
 		player.bullet_ammo = bullet_ammo;
 		player.buck_ammo = buck_ammo;
+		Player_SetGun(gun);
 	}
 
 	player.gun_check[GUN__PISTOL] = true;
@@ -544,12 +606,14 @@ void Player_Init(int keep)
 	player.plane_y = 0.66;
 
 	player.obj->hp = hp;
-	player.obj->size = 0.4;
+	player.obj->size = PLAYER_SIZE;
 
 	player.sensitivity = sens;
 
 	Player_SetupGunSprites();
-	Player_SetGun(GUN__PISTOL);
+
+	if(!keep)
+		Player_SetGun(GUN__PISTOL);
 }
 
 Object* Player_GetObj()
@@ -578,31 +642,37 @@ void Player_HandlePickup(Object* obj)
 	{
 	case SUB__PICKUP_SMALLHP:
 	{
-		Sound_Emit(SOUND__PICKUP_HP);
+		Sound_Emit(SOUND__PICKUP_HP, 0.25);
 
 		player.obj->hp += PICKUP_SMALLHP_HEAL;
 		break;
 	}
 	case SUB__PICKUP_BIGHP:
 	{
-		Sound_Emit(SOUND__PICKUP_HP);
+		Sound_Emit(SOUND__PICKUP_HP, 0.25);
 
 		player.obj->hp += PICKUP_BIGHP_HEAL;
 		break;
 	}
 	case SUB__PICKUP_AMMO:
 	{
+		Sound_Emit(SOUND__PICKUP_AMMO, 0.35);
+
 		player.buck_ammo += PICKUP_AMMO_GIVE / 2;
 		player.bullet_ammo += PICKUP_AMMO_GIVE;
 		break;
 	}
 	case SUB__PICKUP_ROCKETS:
 	{
-		player.bullet_ammo += PICKUP_ROCKETS_GIVE;
+		Sound_Emit(SOUND__PICKUP_AMMO, 0.35);
+
+		player.rocket_ammo += PICKUP_ROCKETS_GIVE;
 		break;
 	}
 	case SUB__PICKUP_SHOTGUN:
 	{
+		Sound_Emit(SOUND__PICKUP_AMMO, 0.35);
+
 		bool just_picked = false;
 
 		if (!player.gun_check[GUN__SHOTGUN])
@@ -623,6 +693,8 @@ void Player_HandlePickup(Object* obj)
 	}
 	case SUB__PICKUP_MACHINEGUN:
 	{
+		Sound_Emit(SOUND__PICKUP_AMMO, 0.35);
+
 		bool just_picked = false;
 
 		if (!player.gun_check[GUN__MACHINEGUN])
@@ -641,16 +713,38 @@ void Player_HandlePickup(Object* obj)
 
 		break;
 	}
+	case SUB__PICKUP_DEVASTATOR:
+	{
+		Sound_Emit(SOUND__PICKUP_AMMO, 0.35);
+
+		bool just_picked = false;
+
+		if (!player.gun_check[GUN__DEVASTATOR])
+		{
+			just_picked = true;
+		}
+
+		player.gun_check[GUN__DEVASTATOR] = true;
+		player.rocket_ammo += PICKUP_DEVASTATOR_AMMO_GIVE;
+
+		if (just_picked)
+		{
+			player.gun_timer = 0;
+			Player_SetGun(GUN__DEVASTATOR);
+		}
+
+		break;
+	}
 	case SUB__PICKUP_INVUNERABILITY:
 	{
-		Sound_Emit(SOUND__PICKUP_SPECIAL);
+		Sound_Emit(SOUND__PICKUP_SPECIAL, 0.5);
 
 		player.godmode_timer = PICKUP_INVUNERABILITY_TIME;
 		break;
 	}
 	case SUB__PICKUP_QUAD_DAMAGE:
 	{
-		Sound_Emit(SOUND__PICKUP_SPECIAL);
+		Sound_Emit(SOUND__PICKUP_SPECIAL, 0.5);
 
 		player.quad_timer = PICKUP_QUAD_TIME;
 		break;
@@ -664,6 +758,7 @@ void Player_HandlePickup(Object* obj)
 	//clamp
 	if (player.bullet_ammo >= PLAYER_MAX_AMMO) player.bullet_ammo = PLAYER_MAX_AMMO;
 	if (player.buck_ammo >= PLAYER_MAX_AMMO) player.buck_ammo = PLAYER_MAX_AMMO;
+	if (player.rocket_ammo >= PLAYER_MAX_AMMO) player.rocket_ammo = PLAYER_MAX_AMMO;
 
 	//delete the object
 	Map_DeleteObject(obj);
@@ -799,23 +894,36 @@ void Player_Draw(Image* image, FontData* font)
 	if (player.obj->hp > 0)
 	{
 		//pseudo crosshair
-		Text_Draw(image, font, 0.5, 0.49, 0.3, 0.3, ".");
+		Text_Draw(image, font, 0.5, 0.49, 0.3, 0.3, "+");
 
 		//hp
 		Text_Draw(image, font, 0.02, 0.95, 1, 1, "HP %i", player.obj->hp);
 
 		//ammo
-		if (player.gun == GUN__PISTOL)
+		switch (player.gun)
+		{
+		case GUN__PISTOL:
 		{
 			Text_Draw(image, font, 0.75, 0.95, 1, 1, "AMMO INF");
+			break;
 		}
-		else if (player.gun == GUN__MACHINEGUN)
+		case GUN__MACHINEGUN:
 		{
 			Text_Draw(image, font, 0.75, 0.95, 1, 1, "AMMO %i", player.bullet_ammo);
+			break;
 		}
-		else if (player.gun == GUN__SHOTGUN)
+		case GUN__SHOTGUN:
 		{
 			Text_Draw(image, font, 0.75, 0.95, 1, 1, "AMMO %i", player.buck_ammo);
+			break;
+		}
+		case GUN__DEVASTATOR:
+		{
+			Text_Draw(image, font, 0.75, 0.95, 1, 1, "AMMO %i", player.rocket_ammo);
+			break;
+		}
+		default:
+			break;
 		}
 
 	}

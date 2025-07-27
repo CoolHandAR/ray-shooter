@@ -1,3 +1,5 @@
+#ifndef R_COMMON_H
+#define R_COMMON_H
 #pragma once
 
 #include <stdbool.h>
@@ -66,6 +68,7 @@ bool Image_CreateFromPath(Image* img, const char* path);
 bool Image_SaveToPath(Image* img, const char* filename);
 void Image_Resize(Image* img, int p_width, int p_height);
 void Image_Destruct(Image* img);
+void Image_Clear(Image* img, int c);
 void Image_Copy(Image* dest, Image* src);
 void Image_Blit(Image* dest, Image* src, int dstX0, int dstY0, int dstX1, int dstY1, int srcX0, int srcY0, int srcX1, int srcY1);
 void Image_Set(Image* img, int x, int y, unsigned char r, unsigned char g, unsigned char b, unsigned char a);
@@ -256,7 +259,6 @@ void Sprite_ResetAnimState(Sprite* sprite);
 void Video_Setup();
 void Video_DrawLine(Image* image, int x0, int y0, int x1, int y1, unsigned char* color);
 void Video_DrawRectangle(Image* image, int p_x, int p_y, int p_w, int p_h, unsigned char* p_color);
-void Video_Clear(Image* image, unsigned char c);
 void Video_RaycastFloorCeilling(Image* image, Image* texture, float* depth_buffer, int x, int spans, int draw_start, int draw_end, float floor_x, float floor_y, float wall_dist, float p_x, float p_y, int doors_drawn, bool is_floor);
 void Video_RaycastMap(Image* image, Image* texture, float* depth_buffer, DrawSpan* draw_spans, int x_start, int x_end, float p_x, float p_y, float p_dirX, float p_dirY, float p_planeX, float p_planeY);
 bool Video_DrawCollumn(Image* image, Image* texture, int x, float size, float* depth_buffer, int tex_x, float wall_dist, unsigned char light, int tile, int spans, int doors_drawn, int* r_draw_start, int* r_draw_end);
@@ -269,7 +271,6 @@ void Video_Shade(Image* image, ShaderFun shader_fun, int x0, int y0, int x1, int
 
 bool Render_Init(int width, int height);
 void Render_ShutDown();
-void Render_Loop();
 void Render_LockThreadsMutex();
 void Render_UnlockThreadsMutex();
 void Render_LockObjectMutex();
@@ -338,3 +339,5 @@ FontGlyphData* FontData_GetGlyphData(const FontData* font_data, char ch);
 void Text_DrawStr(Image* image, const FontData* font_data, float _x, float _y, float scale_x, float scale_y, int r, int g, int b, int a, const char* str);
 void Text_Draw(Image* image, const FontData* font_data, float _x, float _y, float scale_x, float scale_y, const char* fmt, ...);
 void Text_DrawColor(Image* image, const FontData* font_data, float _x, float _y, float scale_x, float scale_y, int r, int g, int b, int a, const char* fmt, ...);
+
+#endif

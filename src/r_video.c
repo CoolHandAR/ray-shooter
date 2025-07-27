@@ -111,12 +111,6 @@ void Video_DrawRectangle(Image* image, int p_x, int p_y, int p_w, int p_h, unsig
 	}
 }
 
-
-void Video_Clear(Image* image, unsigned char c)
-{
-	memset(image->data, (int)c, sizeof(unsigned char) * image->width * image->height * image->numChannels);
-}
-
 static void Video_DrawFloor2(Image* image, Image* texture, float* depth_buffer, DrawSpan* draw_spans, int x_start, int x_end, float p_x, float p_y, float p_dirX, float p_dirY, float p_planeX, float p_planeY)
 {
 	float ray_dirX0 = p_dirX - p_planeX;
@@ -129,7 +123,7 @@ static void Video_DrawFloor2(Image* image, Image* texture, float* depth_buffer, 
 
 	float cam_z = 0.5 * image->height;
 
-	for (int y = image->half_height ; y < image->height; ++y)
+	for (int y = 0; y < image->height; ++y)
 	{
 		bool is_floor = y > image->half_height;
 
@@ -159,10 +153,21 @@ static void Video_DrawFloor2(Image* image, Image* texture, float* depth_buffer, 
 
 		for (int x = x_start; x < x_end; ++x)
 		{
-			int cellX = (int)(floor_x);
-			int cellY = (int)(floor_y);
+			int tile_x = (int)(floor_x);
+			int tile_y = (int)(floor_y);
 
-			LightTile* light_tile = Map_GetLightTile(cellX, cellY);
+			TileID tile = 0;
+
+			if (is_floor)
+			{
+				tile = Map_GetFloorTile(tile_x, tile_y);
+			}
+			else
+			{
+				tile = Map_GetCeilTile(tile_x, tile_y);
+			}
+
+			LightTile* light_tile = Map_GetLightTile(tile_x, tile_y);
 
 			int light = light_tile->light;
 
@@ -171,10 +176,10 @@ static void Video_DrawFloor2(Image* image, Image* texture, float* depth_buffer, 
 			if (light > 255) light = 255;
 
 			// get the texture coordinate from the fractional part
-			int tx = (int)(TILE_SIZE * (floor_x - cellX)) & (TILE_SIZE - 1);
-			int ty = (int)(TILE_SIZE * (floor_y - cellY)) & (TILE_SIZE - 1);
+			int tx = (int)(TILE_SIZE * (floor_x - tile_x)) & (TILE_SIZE - 1);
+			int ty = (int)(TILE_SIZE * (floor_y - tile_y)) & (TILE_SIZE - 1);
 
-			unsigned char* sample = Image_Get(texture, tx, ty);
+			unsigned char* sample = Image_Get(texture, tx + (TILE_SIZE * (tile - 1)), ty);
 			unsigned char color[4] = { LIGHT_LUT[sample[0]][light], LIGHT_LUT[sample[1]][light], LIGHT_LUT[sample[2]][light], 255 };
 
 			float local_x_pos = floor_x;
@@ -623,12 +628,12 @@ void Video_RaycastMap(Image* image, Image* texture, float* depth_buffer, DrawSpa
 			continue;
 		}
 	
-		Video_RaycastFloorCeilling(image, texture, depth_buffer, x, span->width, draw_start, draw_end, span->floor_x, span->floor_y, span->wall_dist, p_x, p_y, doors_drawn, true);
+		//Video_RaycastFloorCeilling(image, texture, depth_buffer, x, span->width, draw_start, draw_end, span->floor_x, span->floor_y, span->wall_dist, p_x, p_y, doors_drawn, true);
 		//Video_RaycastFloorCeilling(image, texture, depth_buffer, x, span->width, draw_start, draw_end, span->floor_x, span->floor_y, span->wall_dist, p_x, p_y, doors_drawn, false);
 
 		x += span->width - 1;
 	}
-	//Video_DrawFloor2(image, texture, depth_buffer, draw_spans, x_start, x_end, p_x, p_y, p_dirX, p_dirY, p_planeX, p_planeY);
+	Video_DrawFloor2(image, texture, depth_buffer, draw_spans, x_start, x_end, p_x, p_y, p_dirX, p_dirY, p_planeX, p_planeY);
 }
 
 bool Video_DrawCollumn(Image* image, Image* texture, int x, float size, float* depth_buffer, int tex_x, float wall_dist, unsigned char light, int tile, int spans, int doors_drawn, int* r_draw_start, int* r_draw_end)
