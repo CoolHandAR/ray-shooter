@@ -1,9 +1,6 @@
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
-#define STB_IMAGE_IMPLEMENTATION
-#include <stb_image/stb_image.h>
-
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
@@ -132,7 +129,7 @@ static bool Engine_SetupSubSystems()
 	if (!Game_Init())
 	{
 		printf("ERROR::Failed to load game assets!\n");
-		return -1;
+		return false;
 	}
 
 	printf("Game loaded \n");

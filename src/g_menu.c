@@ -3,6 +3,8 @@
 #include "main.h"
 #include "sound.h"
 
+#include <stdio.h>
+
 #define SUB_MENU_MAIN 0
 #define SUB_MENU_OPTIONS 1
 #define SUB_MENU_HELP 2

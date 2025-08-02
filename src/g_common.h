@@ -70,7 +70,6 @@ typedef struct
 	Image imp_texture;
 	Image pinky_texture;
 	Image bruiser_texture;
-	Image sky_texture;
 	Image particle_textures;
 	Image menu_texture;
 } GameAssets;

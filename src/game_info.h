@@ -400,88 +400,88 @@ static const char* SOUND_INFO[SOUND__MAX] =
 	NULL,
 
 	//FIREBALL THROW
-	"assets/fireball_throw.wav",
+	"assets/sfx/fireball_throw.wav",
 
 	//FIREBALL EXPLODE
-	"assets/fireball_explode.wav",
+	"assets/sfx/fireball_explode.wav",
 
 	//IMP ALERT
-	"assets/imp_alert.wav",
+	"assets/sfx/imp_alert.wav",
 
 	//IMP HIT
-	"assets/imp_hit.wav",
+	"assets/sfx/imp_hit.wav",
 
 	//IMP DIE
-	"assets/imp_die.wav",
+	"assets/sfx/imp_die.wav",
 
 	//IMP ATTACK
-	"assets/imp_attack.wav",
+	"assets/sfx/imp_attack.wav",
 
 	//PINKY ALERT
-	"assets/pinky_alert.wav",
+	"assets/sfx/pinky_alert.wav",
 
 	//PINKY HIT
-	"assets/pinky_hit.wav",
+	"assets/sfx/pinky_hit.wav",
 
 	//PINKY  DIE
-	"assets/pinky_die.wav",
+	"assets/sfx/pinky_die.wav",
 
 	//PINKY  ATTACK
-	"assets/pinky_attack.wav",
+	"assets/sfx/pinky_attack.wav",
 
 	//BRUISER ALERT
-	"assets/bruiser_act.wav",
+	"assets/sfx/bruiser_act.wav",
 
 	//BRUISER HIT
-	"assets/bruiser_pain.wav",
+	"assets/sfx/bruiser_pain.wav",
 
 	//BRUISER  DIE
-	"assets/bruiser_death.wav",
+	"assets/sfx/bruiser_death.wav",
 
 	//BRUISER  ATTACK
-	"assets/bruiser_attack.wav",
+	"assets/sfx/bruiser_attack.wav",
 
 	//SHOTGUN SHOOT
-	"assets/shotgun_shoot.wav",
+	"assets/sfx/shotgun_shoot.wav",
 
 	//PISTOL SHOOT
-	"assets/pistol_shoot.wav",
+	"assets/sfx/pistol_shoot.wav",
 
 	//MACHINEGUN SHOOT
-	"assets/machinegun_shoot.wav",
+	"assets/sfx/machinegun_shoot.wav",
 
 	//DEVASTATOR SHOOT
-	"assets/devastator_shoot.wav",
+	"assets/sfx/devastator_shoot.wav",
 
 	//NO AMMO
-	"assets/no_ammo.wav",
+	"assets/sfx/no_ammo.wav",
 
 	//DOOR ACTION
-	"assets/door_action.wav",
+	"assets/sfx/door_action.wav",
 
 	//PLAYER PAIN
-	"assets/player_pain.wav",
+	"assets/sfx/player_pain.wav",
 
 	//PLAYER DEATH
-	"assets/player_death.wav",
+	"assets/sfx/player_death.wav",
 
 	//SECRET FOUND
-	"assets/secret.wav",
+	"assets/sfx/secret.wav",
 
 	//TELEPORT
-	"assets/teleport.wav",
+	"assets/sfx/teleport.wav",
 
 	//PICKUP HP
-	"assets/pickup_hp.wav",
+	"assets/sfx/pickup_hp.wav",
 
 	//PICKUP SPECIAL
-	"assets/pickup_special.wav",
+	"assets/sfx/pickup_special.wav",
 
 	//PICKUP AMMO
-	"assets/pickup_ammo.wav",
+	"assets/sfx/pickup_ammo.wav",
 
 	//MUSIC1
-	"assets/music.mp3"
+	"assets/sfx/music.mp3"
 };
 
 
@@ -817,9 +817,9 @@ MissileInfo* Info_GetMissileInfo(int sub_type);
 
 static const char* LEVELS[] =
 {
-	"assets/map0.json",
-	"assets/map1.json",
-	"assets/map2.json"
+	"assets/map/map0.json",
+	"assets/map/map1.json",
+	"assets/map/map2.json"
 };
 
 #endif

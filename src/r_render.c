@@ -510,7 +510,7 @@ bool Render_Init(int width, int height)
 		return;
 	}
 
-	if (!Text_LoadFont("assets/myFont.json", "assets/myFont.png", &s_renderCore.font_data))
+	if (!Text_LoadFont("assets/font/font.json", "assets/font/font.png", &s_renderCore.font_data))
 	{
 		return false;
 	}

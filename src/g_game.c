@@ -49,55 +49,51 @@ bool Game_LoadAssets()
 {
 	memset(&assets, 0, sizeof(assets));
 
-	if (!Image_CreateFromPath(&assets.wall_textures, "assets/walls.png"))
+	if (!Image_CreateFromPath(&assets.wall_textures, "assets/textures/walls.png"))
 	{
 		return false;
 	}
-	if (!Image_CreateFromPath(&assets.object_textures, "assets/object_sheet.png"))
+	if (!Image_CreateFromPath(&assets.object_textures, "assets/textures/object_sheet.png"))
 	{
 		return false;
 	}
-	if (!Image_CreateFromPath(&assets.shotgun_texture, "assets/shaker.png"))
+	if (!Image_CreateFromPath(&assets.shotgun_texture, "assets/textures/shaker.png"))
 	{
 		return false;
 	}
-	if (!Image_CreateFromPath(&assets.machinegun_texture, "assets/machine.png"))
+	if (!Image_CreateFromPath(&assets.machinegun_texture, "assets/textures/machine.png"))
 	{
 		return false;
 	}
-	if (!Image_CreateFromPath(&assets.devastator_texture, "assets/devastator.png"))
+	if (!Image_CreateFromPath(&assets.devastator_texture, "assets/textures/devastator.png"))
 	{
 		return false;
 	}
-	if (!Image_CreateFromPath(&assets.pistol_texture, "assets/pistol.png"))
+	if (!Image_CreateFromPath(&assets.pistol_texture, "assets/textures/pistol.png"))
 	{
 		return false;
 	}
-	if (!Image_CreateFromPath(&assets.imp_texture, "assets/blood_imp.png"))
+	if (!Image_CreateFromPath(&assets.imp_texture, "assets/textures/blood_imp.png"))
 	{
 		return false;
 	}
-	if (!Image_CreateFromPath(&assets.missile_textures, "assets/missile_sheet.png"))
+	if (!Image_CreateFromPath(&assets.missile_textures, "assets/textures/missile_sheet.png"))
 	{
 		return false;
 	}
-	if (!Image_CreateFromPath(&assets.pinky_texture, "assets/pinky_sheet.png"))
+	if (!Image_CreateFromPath(&assets.pinky_texture, "assets/textures/pinky_sheet.png"))
 	{
 		return false;
 	}
-	if (!Image_CreateFromPath(&assets.sky_texture, "assets/sky.png"))
+	if (!Image_CreateFromPath(&assets.particle_textures, "assets/textures/particle_sheet.png"))
 	{
 		return false;
 	}
-	if (!Image_CreateFromPath(&assets.particle_textures, "assets/particle_sheet.png"))
+	if (!Image_CreateFromPath(&assets.menu_texture, "assets/textures/menu.png"))
 	{
 		return false;
 	}
-	if (!Image_CreateFromPath(&assets.menu_texture, "assets/menu.png"))
-	{
-		return false;
-	}
-	if (!Image_CreateFromPath(&assets.bruiser_texture, "assets/bruiser.png"))
+	if (!Image_CreateFromPath(&assets.bruiser_texture, "assets/textures/bruiser.png"))
 	{
 		return false;
 	}
