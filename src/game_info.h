@@ -817,9 +817,9 @@ MissileInfo* Info_GetMissileInfo(int sub_type);
 
 static const char* LEVELS[] =
 {
-	"test.json",
-	"test2.json",
-	"test3.json"
+	"assets/map0.json",
+	"assets/map1.json",
+	"assets/map2.json"
 };
 
 #endif
