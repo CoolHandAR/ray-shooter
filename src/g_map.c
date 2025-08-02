@@ -379,6 +379,28 @@ Object* Map_NewObject(ObjectType type)
 	return obj;
 }
 
+bool Map_LoadFromIndex(int index)
+{
+	int arr_size = sizeof(LEVELS) / sizeof(LEVELS[0]);
+	if (index >= arr_size)
+	{
+		index = arr_size - 1;
+	}
+	else if (index < 0)
+	{
+		index = 0;
+	}
+
+	if (!Map_Load(LEVELS[index]))
+	{
+		return false;
+	}
+
+	s_map.level_index = index;
+
+	return true;
+}
+
 bool Map_Load(const char* filename)
 {
 	Map_Destruct();
@@ -677,6 +699,29 @@ bool Map_Load(const char* filename)
 				{
 					s_map.player_spawn_point_x = obj_x;
 					s_map.player_spawn_point_y = obj_y;
+
+					cJSON* props = cJSON_GetObjectItem(object, "properties");
+
+					if (props && cJSON_IsArray(props))
+					{
+						cJSON* prop = NULL;
+						cJSON_ArrayForEach(prop, props)
+						{
+							cJSON* prop_name = cJSON_GetObjectItem(prop, "name");
+
+							if (prop_name && cJSON_IsString(prop_name) && !strcmp(cJSON_GetStringValue(prop_name), "spawn_rot"))
+							{
+								cJSON* prop_value = cJSON_GetObjectItem(prop, "value");
+
+								if (prop_value && cJSON_IsNumber(prop_value))
+								{
+									s_map.player_spawn_rot = cJSON_GetNumberValue(prop_value);
+									break;
+								}
+							}
+						}
+					}
+
 					continue;
 				}
 
@@ -1099,7 +1144,7 @@ void Map_GetSize(int* r_width, int* r_height)
 	}
 }
 
-void Map_GetSpawnPoint(int* r_x, int* r_y)
+void Map_GetSpawnPoint(int* r_x, int* r_y, float* r_rot)
 {
 	if (r_x)
 	{
@@ -1109,8 +1154,12 @@ void Map_GetSpawnPoint(int* r_x, int* r_y)
 	{
 		*r_y = s_map.player_spawn_point_y;
 	}
-}
+	if (r_rot)
+	{
+		*r_rot = s_map.player_spawn_rot;
+	}
 
+}
 bool Map_UpdateObjectTile(Object* obj)
 {
 	if (obj->x < 0 || obj->y < 0)

@@ -200,6 +200,7 @@ static void Video_DrawFloor2(Image* image, Image* texture, float* depth_buffer, 
 				}
 
 				Image_Set2(image, x + x_steps, y, color);
+				//depth_buffer[(x + x_steps) + y * image->width] = row_distance;
 
 				local_x_pos += floor_step_x;
 				local_y_pos += floor_step_y;
@@ -1124,7 +1125,7 @@ bool Video_SpriteSetup(Image* image, Sprite* sprite, float* depth_buffer, float 
 
 	//big bias for occlusion testing
 	//since otherwise we get incorrect culling
-	float check_size = 5;
+	float check_size = 8;
 
 	float t0 = inv_det * (-p_planeY * (local_sprite_x - check_size) + p_planeX * (local_sprite_y - check_size));
 	float t1 = inv_det * (-p_planeY * (local_sprite_x + check_size) + p_planeX * (local_sprite_y - check_size));

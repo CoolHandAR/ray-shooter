@@ -25,7 +25,7 @@ bool Game_Init()
 	Game_SetState(GS__MENU);
 
 	//load the first map
-	if (!Map_Load(LEVELS[0]))
+	if (!Map_LoadFromIndex(0))
 	{
 		printf("ERROR:: Failed to load map !\n");
 		return false;

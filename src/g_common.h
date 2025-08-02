@@ -297,6 +297,7 @@ typedef struct
 
 	int player_spawn_point_x;
 	int player_spawn_point_y;
+	float player_spawn_rot;
 
 	int level_index;
 
@@ -309,6 +310,7 @@ void Map_SetDirtyTempLight();
 int Map_GetLevelIndex();
 Map* Map_GetMap();
 Object* Map_NewObject(ObjectType type);
+bool Map_LoadFromIndex(int index);
 bool Map_Load(const char* filename);
 TileID Map_GetTile(int x, int y);
 TileID Map_GetFloorTile(int x, int y);
@@ -318,7 +320,7 @@ LightTile* Map_GetLightTile(int x, int y);
 void Map_SetTempLight(int x, int y, int size, int light);
 TileID Map_Raycast(float p_x, float p_y, float dir_x, float dir_y, float* r_hitX, float* r_hitY);
 void Map_GetSize(int* r_width, int* r_height);
-void Map_GetSpawnPoint(int* r_x, int* r_y);
+void Map_GetSpawnPoint(int* r_x, int* r_y, float* r_rot);
 bool Map_UpdateObjectTile(Object* obj);
 int Map_GetTotalTiles();
 int Map_GetTotalNonEmptyTiles();
@@ -331,6 +333,7 @@ void Map_Destruct();
 //Player stuff
 void Player_Init(int keep);
 Object* Player_GetObj();
+void Player_Rotate(float rot);
 void Player_Hurt(float dir_x, float dir_y);
 void Player_HandlePickup(Object* obj);
 void Player_Update(GLFWwindow* window, float delta);

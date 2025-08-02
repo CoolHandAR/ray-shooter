@@ -18,6 +18,8 @@
 #define MIN_SENS 0.5
 #define MAX_SENS 16
 
+static const float PI = 3.14159265359;
+
 typedef struct
 {
 	Sprite gun_sprite;
@@ -372,19 +374,19 @@ static void Player_ShootGun()
 	}
 	case GUN__SHOTGUN:
 	{
-		volume = 0.1;
+		volume = 0.15;
 		sound_index = SOUND__SHOTGUN_SHOOT;
 		break;
 	}
 	case GUN__MACHINEGUN:
 	{
-		volume = 0.1;
+		volume = 0.15;
 		sound_index = SOUND__MACHINEGUN_SHOOT;
 		break;
 	}
 	case GUN__DEVASTATOR:
 	{
-		volume = 0.1;
+		volume = 0.2;
 		sound_index = SOUND__DEVASTATOR_SHOOT;
 		break;
 	}
@@ -587,7 +589,8 @@ void Player_Init(int keep)
 	memset(&player, 0, sizeof(player));
 	
 	int spawn_x, spawn_y;
-	Map_GetSpawnPoint(&spawn_x, &spawn_y);
+	float spawn_rot;
+	Map_GetSpawnPoint(&spawn_x, &spawn_y, &spawn_rot);
 
 	if (keep)
 	{
@@ -616,13 +619,28 @@ void Player_Init(int keep)
 
 	Player_SetupGunSprites();
 
+
 	if(!keep)
 		Player_SetGun(GUN__PISTOL);
+
+	Player_Rotate(spawn_rot);
 }
 
 Object* Player_GetObj()
 {
 	return player.obj;
+}
+
+void Player_Rotate(float rot)
+{
+	rot = rot * PI / 180.0;
+
+	double oldDirX = player.obj->dir_x;
+	player.obj->dir_x = player.obj->dir_x * cos(-rot) - player.obj->dir_y * sin(-rot);
+	player.obj->dir_y = oldDirX * sin(-rot) + player.obj->dir_y * cos(-rot);
+	double oldPlaneX = player.plane_x;
+	player.plane_x = player.plane_x * cos(-rot) - player.plane_y * sin(-rot);
+	player.plane_y = oldPlaneX * sin(-rot) + player.plane_y * cos(-rot);
 }
 
 void Player_Hurt(float dir_x, float dir_y)
@@ -832,7 +850,7 @@ void Player_GetView(float* r_x, float* r_y, float* r_dirX, float* r_dirY, float*
 
 void Player_MouseCallback(float x, float y)
 {
-	if (player.obj->hp <= 0)
+	if (player.obj->hp <= 0 || Game_GetState() != GS__LEVEL)
 	{
 		return;
 	}
@@ -915,7 +933,15 @@ void Player_Draw(Image* image, FontData* font)
 		}
 
 		//hp
-		Text_Draw(image, font, 0.02, 0.95, 1, 1, "HP %i", player.obj->hp);
+		int hp_color[3] = { 255, 255, 255 };
+
+		if (player.obj->hp > PLAYER_MAX_HP)
+		{
+			hp_color[0] = 128;
+			hp_color[1] = 128;
+		}
+
+		Text_DrawColor(image, font, 0.02, 0.95, 1, 1, hp_color[0], hp_color[1], hp_color[2], 255, "HP %i", player.obj->hp);
 
 		//ammo
 		switch (player.gun)
