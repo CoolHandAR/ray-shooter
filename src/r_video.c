@@ -628,9 +628,6 @@ void Video_RaycastMap(Image* image, Image* texture, float* depth_buffer, DrawSpa
 			continue;
 		}
 	
-		//Video_RaycastFloorCeilling(image, texture, depth_buffer, x, span->width, draw_start, draw_end, span->floor_x, span->floor_y, span->wall_dist, p_x, p_y, doors_drawn, true);
-		//Video_RaycastFloorCeilling(image, texture, depth_buffer, x, span->width, draw_start, draw_end, span->floor_x, span->floor_y, span->wall_dist, p_x, p_y, doors_drawn, false);
-
 		x += span->width - 1;
 	}
 	Video_DrawFloor2(image, texture, depth_buffer, draw_spans, x_start, x_end, p_x, p_y, p_dirX, p_dirY, p_planeX, p_planeY);
@@ -684,6 +681,8 @@ bool Video_DrawCollumn(Image* image, Image* texture, int x, float size, float* d
 
 	int i_tex_pos = (int)tex_pos;
 
+	int tx = tex_x + (TILE_SIZE * (tile - 1));
+
 	//draw the vertical collumn
 	for (int y = draw_start; y < draw_end; y++)
 	{
@@ -703,7 +702,7 @@ bool Video_DrawCollumn(Image* image, Image* texture, int x, float size, float* d
 			i_tex_pos = (int)tex_pos;
 
 			//get tile color
-			unsigned char* tile_color = Image_Get(texture, tex_x + (TILE_SIZE * (tile - 1)), tex_y);
+			unsigned char* tile_color = Image_Get(texture, tx, tex_y);
 
 			unsigned char color[4] = { LIGHT_LUT[tile_color[0]][light], LIGHT_LUT[tile_color[1]][light], LIGHT_LUT[tile_color[2]][light], 255 };
 			
@@ -1038,6 +1037,319 @@ void Video_DrawSprite(Image* image, Sprite* sprite, float* depth_buffer, float p
 
 				next_tex_valid = true;
 			}
+		}
+
+		stripe += x_steps - 1;
+	}
+}
+
+bool Video_SpriteSetup(Image* image, Sprite* sprite, float* depth_buffer, float p_x, float p_y, float p_dirX, float p_dirY, float p_planeX, float p_planeY)
+{
+	if (!depth_buffer)
+	{
+		return false;
+	}
+
+	//invalid scale
+	if (sprite->scale_x <= 0 || sprite->scale_y <= 0)
+	{
+		return false;
+	}
+	//completely transparent
+	if (sprite->transparency >= 1)
+	{
+		return false;
+	}
+
+	//translate sprite position to relative to camera
+	float local_sprite_x = sprite->x - p_x;
+	float local_sprite_y = sprite->y - p_y;
+
+	float inv_det = 1.0 / (p_planeX * p_dirY - p_dirX * p_planeY);
+
+	float transform_x = inv_det * (p_dirY * local_sprite_x - p_dirX * local_sprite_y);
+	float transform_y = inv_det * (-p_planeY * local_sprite_x + p_planeX * local_sprite_y);
+
+	if (transform_y <= 0)
+	{
+		return false;
+	}
+
+	int sprite_screen_x = (int)((image->half_width) * (1 + transform_x / transform_y));
+
+	int height_transform_y = fabs((int)(image->height / (transform_y)));
+
+	int sprite_width = height_transform_y * (sprite->scale_x);
+	int sprite_height = height_transform_y * (sprite->scale_y);
+
+	if (sprite_height <= 0 || sprite_width <= 0)
+	{
+		return false;
+	}
+
+	int v_move_screen = (int)((sprite->v_offset * image->half_height) / transform_y);
+
+	int sprite_half_width = sprite_width / 2;
+	int sprite_half_height = sprite_height / 2;
+
+	//calculate lowest and highest pixel to fill in current stripe
+	int draw_start_y = -sprite_height / 2 + image->height / 2 + v_move_screen;
+	if (draw_start_y < 0) draw_start_y = 0;
+	int draw_end_y = sprite_height / 2 + image->height / 2 + v_move_screen;
+	if (draw_end_y >= image->height) draw_end_y = image->height - 1;
+
+	if (draw_start_y >= image->height || draw_end_y <= 0)
+	{
+		return false;
+	}
+
+	int draw_start_x = -sprite_width / 2 + sprite_screen_x;
+	if (draw_start_x < 0) draw_start_x = 0;
+	int draw_end_x = sprite_width / 2 + sprite_screen_x;
+	if (draw_end_x > image->width) draw_end_x = image->width;
+
+	if (draw_start_x >= image->width || draw_end_x <= 0)
+	{
+		return false;
+	}
+
+	int safe_end_x = (draw_end_x >= image->width) ? draw_end_x - 1 : draw_end_x;
+	int safe_end_y = (draw_end_y >= image->height) ? draw_end_y - 1 : draw_end_y;
+
+	//all depth edges of a sprite rectangle
+	float d0 = depth_buffer[draw_start_x + draw_start_y * image->width]; //top left edge
+	float d1 = depth_buffer[safe_end_x + draw_start_y * image->width]; //top right edge
+	float d2 = depth_buffer[draw_start_x + safe_end_y * image->width]; //bottom left edge
+	float d3 = depth_buffer[safe_end_x + safe_end_y * image->width]; //bottom right edge
+
+	//big bias for occlusion testing
+	//since otherwise we get incorrect culling
+	float check_size = 5;
+
+	float t0 = inv_det * (-p_planeY * (local_sprite_x - check_size) + p_planeX * (local_sprite_y - check_size));
+	float t1 = inv_det * (-p_planeY * (local_sprite_x + check_size) + p_planeX * (local_sprite_y - check_size));
+	float t2 = inv_det * (-p_planeY * (local_sprite_x - check_size) + p_planeX * (local_sprite_y + check_size));
+	float t3 = inv_det * (-p_planeY * (local_sprite_x + check_size) + p_planeX * (local_sprite_y + check_size));
+
+	//check if all edges are fully occluded
+	if (t0 >= d0 && t1 >= d1 && t2 >= d2 && t3 >= d3)
+	{
+		return false;
+	}
+
+	int sprite_light = sprite->light * 255;
+
+	LightTile* light_tile = Map_GetLightTile((int)sprite->x, (int)sprite->y);
+	int light = light_tile->light;
+
+	light += sprite_light;
+	light += light_tile->temp_light;
+
+	if (light > 255)
+	{
+		light = 255;
+	}
+	else if (light < 0)
+	{
+		light = 0;
+	}
+
+	sprite->r_draw_start_x = draw_start_x;
+	sprite->r_draw_end_x = draw_end_x;
+	sprite->r_draw_start_y = draw_start_y;
+	sprite->r_draw_end_y = draw_end_y;
+	sprite->r_width = sprite_width;
+	sprite->r_height = sprite_height;
+	sprite->r_light = light;
+	sprite->r_screen_x = sprite_screen_x;
+	sprite->r_transform_y = transform_y;
+
+	return true;
+}
+
+void Video_SpriteClipAndDraw(Image* image, Sprite* sprite, float* depth_buffer, int x_start, int x_end)
+{
+	int draw_start_x = sprite->r_draw_start_x;
+	int draw_end_x = sprite->r_draw_end_x;
+
+	if (draw_start_x < x_start) draw_start_x = x_start;
+	if (draw_end_x > x_end) draw_end_x = x_end;
+
+	//outside the clip range
+	if (draw_start_x >= x_end || draw_end_x <= x_start)
+	{
+		return;
+	}
+
+	bool sprite_flip_h = sprite->flip_h;
+	bool sprite_flip_v = sprite->flip_v;
+
+	int light = sprite->r_light;
+
+	float transform_y = sprite->r_transform_y;
+
+	int v_move_screen = (int)((sprite->v_offset * image->half_height) / transform_y);
+
+	int draw_start_y = sprite->r_draw_start_y;
+	int draw_end_y = sprite->r_draw_end_y;
+
+	int sprite_screen_x = sprite->r_screen_x;
+
+	int sprite_width = sprite->r_width;
+	int sprite_height = sprite->r_height;
+
+	int sprite_half_width = sprite_width / 2;
+
+	int frame = sprite->frame;
+
+	const int h_frames = sprite->img->h_frames;
+	const int v_frames = sprite->img->v_frames;
+
+	int sprite_offset_x = (h_frames > 0) ? frame % h_frames : 0;
+	int sprite_offset_y = (v_frames > 0) ? frame / h_frames : 0;
+
+	sprite_offset_x += sprite->frame_offset_x;
+	sprite_offset_y += sprite->frame_offset_y;
+
+	int sprite_rect_width = (h_frames > 0) ? sprite->img->width / h_frames : sprite->img->width;
+	int sprite_rect_height = (v_frames > 0) ? sprite->img->height / v_frames : sprite->img->height;
+
+	FrameInfo* frame_info = Image_GetFrameInfo(sprite->img, frame + (sprite->frame_offset_x) + (sprite->frame_offset_y * sprite->img->h_frames));
+
+	if (sprite_flip_h)
+	{
+		sprite_offset_x += 1;
+	}
+
+	float transparency = (sprite->transparency > 0) ? (1.0 / min(sprite->transparency, 1)) : 0;
+
+	int min_x = (sprite_flip_h) ? ((sprite_rect_width)-(frame_info->max_real_x)) : frame_info->min_real_x;
+	int max_x = (sprite_flip_h) ? ((sprite_rect_width)-(frame_info->min_real_x)) : frame_info->max_real_x;
+
+	if (sprite_flip_h)
+	{
+		if (min_x > 0) min_x -= 1;
+		max_x += 1;
+	}
+
+	float x_tex_step = (256 * (float)sprite_rect_width / (float)sprite_width) / 256.0;
+
+	for (int stripe = draw_start_x; stripe < draw_end_x; stripe++)
+	{
+		float tex_pos_x = (256.0 * (stripe - (-sprite_half_width + sprite_screen_x)) * sprite_rect_width / sprite_width) / 256.0;
+		int tex_x = tex_pos_x;
+
+		if (tex_x < min_x)
+		{
+			continue;
+		}
+		else if (tex_x > max_x)
+		{
+			break;
+		}
+
+		int span_x = (sprite->flip_h) ? (sprite_rect_width - tex_x) : tex_x;
+
+		AlphaSpan* span = FrameInfo_GetAlphaSpan(frame_info, span_x);
+
+		if (span->min > span->max)
+		{
+			continue;
+		}
+
+		int x_steps = 0;
+		float test_step_x = tex_pos_x;
+
+		while ((int)test_step_x == tex_x && (stripe + x_steps) < draw_end_x)
+		{
+			test_step_x += x_tex_step;
+			x_steps++;
+		}
+
+		int y_min = (sprite_flip_v) ? (sprite_rect_height - (span->max)) : span->min;
+		int y_max = (sprite_flip_v) ? (sprite_rect_height - (span->min)) : span->max;
+
+		if (sprite_flip_v)
+		{
+			if (y_min > 0) y_min -= 1;
+			y_max += 1;
+		}
+		if (sprite_flip_h)
+		{
+			tex_x -= 1;
+			tex_x = -tex_x;
+		}
+
+		bool next_tex_valid = false;
+		int next_tex_y = -1;
+		int next_d = -1;
+
+		for (int y = draw_start_y; y < draw_end_y; y++)
+		{
+			int d = next_d;
+			int tex_y = next_tex_y;
+
+			if (!next_tex_valid)
+			{
+				d = (y - v_move_screen) * 256 - image->height * 128 + sprite_height * 128;
+				tex_y = ((d * sprite_rect_height) / sprite_height) / 256;
+			}
+
+			next_tex_valid = false;
+
+			if (tex_y < y_min)
+			{
+				continue;
+			}
+			else if (tex_y > y_max)
+			{
+				break;
+			}
+
+			unsigned char* tex_color = Image_Get(sprite->img, tex_x + (sprite_offset_x * sprite_rect_width), tex_y + (sprite_offset_y * sprite_rect_height));
+
+			//alpha discard if possible
+			if (sprite->img->numChannels >= 4)
+			{
+				if (tex_color[3] < 128)
+				{
+					continue;
+				}
+			}
+
+			unsigned char color[4] = { LIGHT_LUT[tex_color[0]][light], LIGHT_LUT[tex_color[1]][light], LIGHT_LUT[tex_color[2]][light], 255 };
+
+			next_d = d;
+			next_tex_y = tex_y;
+
+			while (y < draw_end_y)
+			{
+				for (int l = 0; l < x_steps; l++)
+				{
+					int sl = (stripe + l);
+
+					if (transform_y >= depth_buffer[sl + y * image->width])
+					{
+						continue;
+					}
+
+					Image_Set2(image, sl, y, color);
+					depth_buffer[sl + y * image->width] = transform_y;
+				}
+
+				next_d = ((y + 1) - v_move_screen) * 256 - image->height * 128 + sprite_height * 128;
+				next_tex_y = ((next_d * sprite_rect_height) / sprite_height) / 256;
+
+				if (next_tex_y != tex_y)
+				{
+					break;
+				}
+
+				y++;
+
+			}
+
+			next_tex_valid = true;
 		}
 
 		stripe += x_steps - 1;

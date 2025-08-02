@@ -4,16 +4,11 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image/stb_image.h>
 
-#include "u_math.h"
-
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include <time.h>
-#include <assert.h>
-#include <math.h>
-#include <windows.h>
 
 #include "g_common.h"
 #include "r_common.h"
@@ -22,7 +17,6 @@
 #include "sound.h"
 
 #define WINDOW_SCALE 3
-
 #define WINDOW_WIDTH 640
 #define WINDOW_HEIGHT 360
 #define WINDOW_NAME "FPS_GAME"
@@ -37,44 +31,15 @@ typedef struct
 
 static EngineData s_engine;
 
-static const char* VERTEX_SHADER_SOURCE[] =
-{
-	"#version 330 core \n"
-
-	"layout(location = 0) in vec3 a_Pos;\n"
-	"layout(location = 1) in vec2 a_texCoords;\n"
-
-	"out vec2 TexCoords;\n"
-
-	"void main()\n"
-	"{\n"
-		"TexCoords = a_texCoords;\n"
-		"gl_Position = vec4(a_Pos.x, -a_Pos.y, 1.0, 1.0);\n"
-	"}\n"
-};
-static const char* FRAGMENT_SHADER_SOURCE[] =
-{
-	"#version 330 core \n"
-
-	"out vec4 FragColor;\n"
-
-	"in vec2 TexCoords;\n"
-
-	"uniform sampler2D scene_texture;\n"
-
-	"void main()\n"
-	"{\n"
-		"vec4 TexColor = texture(scene_texture, TexCoords);\n"
-
-		"FragColor = TexColor;\n"
-	"}\n"
-};
-
 extern void Render_WindowCallback(GLFWwindow* window, int width, int height);
 
 static void MouseCallback(GLFWwindow* window, double x, double y)
 {
 	Player_MouseCallback(x, y);
+}
+static void MouseScrollCallback(GLFWwindow* window, double xoffset, double yoffset)
+{
+	
 }
 
 static bool Engine_SaveCfg(const char* filename)
@@ -283,6 +248,8 @@ int main()
 
 	//attempt to load cfg
 	Engine_LoadCfg("config.cfg");
+
+	Render_ToggleFullscreen();
 
 	//MAIN LOOP
 	while (!glfwWindowShouldClose(s_engine.window))

@@ -8,6 +8,7 @@
 #include "main.h"
 #include "u_math.h"
 
+#define HIT_TIME 0.1
 #define PLAYER_SIZE 0.4
 #define PLAYER_MAX_HP 100
 #define PLAYER_MAX_AMMO 100
@@ -25,21 +26,24 @@ typedef struct
 	int move_x;
 	int move_y;
 	int slow_move;
-	int gun_sound_id;
 
 	int buck_ammo;
 	int bullet_ammo;
 	int rocket_ammo;
 
+	float alive_timer;
 	float gun_timer;
 	float hurt_timer;
 	float godmode_timer;
 	float quad_timer;
 	float hp_tick_timer;
+	float hit_timer;
 
 	float bob;
 	float gun_offset_x;
 	float gun_offset_y;
+
+	int stored_hp;
 
 	GunType gun;
 	GunInfo* gun_info;
@@ -198,9 +202,14 @@ static void Player_TraceBullet(float p_x, float p_y, float p_dirX, float p_dirY)
 		}
 
 		//spawn blood particles
-		if (rand() % 100 > 50)
+		if (rand() % 100 > 25)
 		{
 			Object_Spawn(OT__PARTICLE, SUB__PARTICLE_BLOOD, (ray_obj->x) + (Math_randf() * 0.5), (ray_obj->y) + (Math_randf() * 0.5));
+		}
+
+		if (ray_obj->hp > 0)
+		{
+			player.hit_timer = HIT_TIME;
 		}
 
 		Object_Hurt(ray_obj, player.obj, dmg);
@@ -396,10 +405,12 @@ static void Player_Die()
 
 static void Player_UpdateTimers(float delta)
 {
+	if (player.obj->hp > 0) player.alive_timer += delta;
 	if (player.gun_timer > 0) player.gun_timer -= delta;
 	if (player.hurt_timer > 0) player.hurt_timer -= delta;
 	if (player.quad_timer > 0) player.quad_timer -= delta;
 	if (player.hp_tick_timer > 0) player.hp_tick_timer -= delta;
+	if (player.hit_timer > 0) player.hit_timer -= delta;
 
 	if (player.godmode_timer > 0)
 	{
@@ -416,8 +427,7 @@ static void Player_UpdateListener()
 	ma_engine* sound_engine = Sound_GetEngine();
 
 	ma_engine_listener_set_position(sound_engine, 0, player.obj->x, 0, player.obj->y);
-	ma_engine_listener_set_direction(sound_engine, 0, player.obj->dir_x, 0, player.obj->dir_y);
-	Sound_Set(player.gun_sound_id, player.obj->x, player.obj->y, player.obj->dir_x, player.obj->dir_y);
+	ma_engine_listener_set_direction(sound_engine, 0, -player.obj->dir_x, 0, -player.obj->dir_y);
 }
 
 static void Player_PressSwitch()
@@ -497,15 +507,9 @@ static void Player_ProcessInput(GLFWwindow* window)
 	{
 		Player_SetGun(GUN__DEVASTATOR);
 	}
-
 	if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
 	{
 		Game_SetState(GS__MENU);
-	}
-
-	if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
-	{
-		//Player_PressSwitch();
 	}
 
 	player.move_x = move_x;
@@ -577,7 +581,7 @@ void Player_Init(int keep)
 	if (keep)
 	{
 		memcpy(guns_check, player.gun_check, sizeof(guns_check));
-		hp = player.obj->hp;
+		hp = player.stored_hp;
 	}
 
 	memset(&player, 0, sizeof(player));
@@ -602,7 +606,7 @@ void Player_Init(int keep)
 
 	player.obj->dir_x = -1;
 	player.obj->dir_y = 0;
-	player.plane_x = 0;
+	player.plane_x = 0.0000001; //hack to prevent black floors and ceillings
 	player.plane_y = 0.66;
 
 	player.obj->hp = hp;
@@ -626,12 +630,12 @@ void Player_Hurt(float dir_x, float dir_y)
 	if (player.obj->hp <= 0)
 	{
 		player.hurt_timer = 2;
-		Sound_EmitWorldTemp(SOUND__PLAYER_DIE, player.obj->x, player.obj->y, player.obj->dir_x, player.obj->dir_y);
+		Sound_Emit(SOUND__PLAYER_DIE, 0.35);
 	}
 	else
 	{
 		player.hurt_timer = 0.5;
-		Sound_EmitWorldTemp(SOUND__PLAYER_PAIN, player.obj->x, player.obj->y, player.obj->dir_x, player.obj->dir_y);
+		Sound_Emit(SOUND__PLAYER_PAIN, 0.35);
 	}
 
 }
@@ -768,8 +772,10 @@ void Player_Update(GLFWwindow* window, float delta)
 {
 	Player_ProcessInput(window);
 	Player_UpdateTimers(delta);
+	Player_UpdateListener();
 	Sprite_UpdateAnimation(&player.gun_sprites[player.gun], delta);
 
+	//tick down if overhealed
 	if (player.obj->hp > PLAYER_MAX_HP)
 	{
 		if (player.hp_tick_timer <= 0)
@@ -793,8 +799,10 @@ void Player_Update(GLFWwindow* window, float delta)
 
 	if (player.move_x != 0 || player.move_y != 0)
 	{
-		float bob_amp = 0.005;
-		float bob_freq = speed * 4;
+		float bob_amp = 0.001;
+		float bob_freq = 16;
+
+		if (player.slow_move == 1) bob_freq *= 0.5;
 			
 		player.bob += delta;
 
@@ -807,6 +815,9 @@ void Player_Update(GLFWwindow* window, float delta)
 	{
 		player.gun_sprites[player.gun].frame = 0;
 	}
+
+	//hacky way to store hp, since we reset the map objects on map change 
+	player.stored_hp = player.obj->hp;
 }
 
 void Player_GetView(float* r_x, float* r_y, float* r_dirX, float* r_dirY, float* r_planeX, float* r_planeY)
@@ -894,7 +905,14 @@ void Player_Draw(Image* image, FontData* font)
 	if (player.obj->hp > 0)
 	{
 		//pseudo crosshair
-		Text_Draw(image, font, 0.5, 0.49, 0.3, 0.3, "+");
+		if (player.hit_timer > 0)
+		{
+			Text_DrawColor(image, font, 0.5, 0.49, 0.3, 0.3, 255, 0, 0, 255, "+");
+		}
+		else
+		{
+			Text_Draw(image, font, 0.5, 0.49, 0.3, 0.3, "+");
+		}
 
 		//hp
 		Text_Draw(image, font, 0.02, 0.95, 1, 1, "HP %i", player.obj->hp);

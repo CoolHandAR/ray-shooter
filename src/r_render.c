@@ -8,8 +8,7 @@
 #include <main.h>
 #include <windows.h>
 
-#define NUM_RENDER_THREADS 10
-#define MAX_DRAWSPRITES_PER_THREAD 10
+#define NUM_RENDER_THREADS 8
 #define MAX_DRAWSPRITES 1024
 #define MAX_SCREENSPRITES 10
 #define MAX_SCREENTEXTS 10
@@ -59,9 +58,8 @@ typedef enum
 {
 	TWT__NONE,
 
-	TWT__RAYCAST,
-	TWT__DRAW_SPRITES,
-	TWT__SHADER
+	TWT__SHADER,
+	TWT__DRAW_LEVEL
 } ThreadWorkType;
 
 typedef struct
@@ -76,8 +74,6 @@ typedef struct
 	HANDLE active_event;
 	HANDLE finished_work_event;
 
-	int draw_sprite_indexes[MAX_DRAWSPRITES_PER_THREAD];
-	int num_draw_sprites;
 	int x_start, x_end;
 
 	bool shutdown;
@@ -88,12 +84,10 @@ typedef struct
 	GLuint gl_texture, gl_vao, gl_vbo, gl_shader;
 
 	Image framebuffer;
-	Image wall_buffer;
 
 	DrawSpan* draw_spans;
 
 	float* depth_buffer;
-	float* wall_depth_buffer;
 
 	int w, h;
 	int win_w, win_h;
@@ -103,6 +97,7 @@ typedef struct
 	float plane_x, plane_y;
 
 	int scale;
+	bool is_fullscreen;
 
 	FontData font_data;
 
@@ -110,6 +105,9 @@ typedef struct
 
 	Sprite* draw_sprites[MAX_DRAWSPRITES];
 	int num_draw_sprites;
+
+	int sorted_draw_sprite_indices[MAX_DRAWSPRITES];
+	int num_sorted_draw_sprites;
 
 	Sprite* screen_sprites[MAX_SCREENSPRITES];
 	int num_screen_sprites;
@@ -266,29 +264,31 @@ static void Render_ThreadLoop(RenderThread* thread)
 
 		switch (thread->work_type)
 		{
-		case TWT__RAYCAST:
-		{
-			Video_RaycastMap(&s_renderCore.wall_buffer, &assets->wall_textures, s_renderCore.wall_depth_buffer, s_renderCore.draw_spans, thread->x_start, thread->x_end, s_renderCore.view_x, s_renderCore.view_y, s_renderCore.dir_x, s_renderCore.dir_y, s_renderCore.plane_x, s_renderCore.plane_y);
-			break;
-		}
-		case TWT__DRAW_SPRITES:
-		{
-			for (int i = 0; i < thread->num_draw_sprites; i++)
-			{
-				int draw_sprite_index = thread->draw_sprite_indexes[i];
-				Sprite* sprite = s_renderCore.draw_sprites[draw_sprite_index];
-
-				Video_DrawSprite(&s_renderCore.framebuffer, sprite, s_renderCore.depth_buffer, s_renderCore.view_x, s_renderCore.view_y, s_renderCore.dir_x, s_renderCore.dir_y, s_renderCore.plane_x, s_renderCore.plane_y);
-			}
-
-			thread->num_draw_sprites = 0;
-			break;
-		}
 		case TWT__SHADER:
 		{
 			Video_Shade(&s_renderCore.framebuffer, s_renderCore.fullscreen_shader_fun, thread->x_start, 0, thread->x_end, s_renderCore.h);
 			break;
 		}
+		case TWT__DRAW_LEVEL:
+		{
+			Video_RaycastMap(&s_renderCore.framebuffer, &assets->wall_textures, s_renderCore.depth_buffer, s_renderCore.draw_spans, thread->x_start, thread->x_end, s_renderCore.view_x, s_renderCore.view_y, s_renderCore.dir_x, s_renderCore.dir_y, s_renderCore.plane_x, s_renderCore.plane_y);
+			
+			for (int i = 0; i < s_renderCore.num_sorted_draw_sprites; i++)
+			{
+				int sprite_index = s_renderCore.sorted_draw_sprite_indices[i];
+				Sprite* sprite = s_renderCore.draw_sprites[sprite_index];
+
+				if (!sprite)
+				{
+					continue;
+				}
+
+				Video_SpriteClipAndDraw(&s_renderCore.framebuffer, sprite, s_renderCore.depth_buffer, thread->x_start, thread->x_end);
+			}
+
+			break;
+		}
+
 		default:
 			break;
 		}
@@ -400,69 +400,6 @@ static void Render_SetThreadsStartAndEnd(int width)
 		x_end += slice;
 	}
 }
-static void Render_ThreadAssignDrawSprites()
-{
-	s_renderCore.num_main_thread_draw_sprites = 0;
-
-	if (s_renderCore.num_draw_sprites <= 0)
-	{
-		return;
-	}
-
-	int sprites_per_thread = ceil((float)s_renderCore.num_draw_sprites / (float)NUM_RENDER_THREADS);
-
-	if (sprites_per_thread <= 0)
-	{
-		sprites_per_thread = 1;
-	}
-	else if (sprites_per_thread >= MAX_DRAWSPRITES_PER_THREAD)
-	{
-		sprites_per_thread = MAX_DRAWSPRITES_PER_THREAD;
-	}
-
-	int sprite_index = 0;
-
-	for (int i = 0; i < NUM_RENDER_THREADS; i++)
-	{
-		RenderThread* render_thread = &s_renderCore.threads[i];
-
-		if (sprite_index >= s_renderCore.num_draw_sprites)
-		{
-			break;
-		}
-
-		for (int k = 0; k < sprites_per_thread; k++)
-		{
-			if (sprite_index >= s_renderCore.num_draw_sprites)
-			{
-				break;
-			}
-
-			render_thread->draw_sprite_indexes[k] = sprite_index++;
-			render_thread->num_draw_sprites++;
-		}
-	}
-
-	//we have some sprites remaining
-	if (sprite_index < s_renderCore.num_draw_sprites)
-	{
-		int remainder = s_renderCore.num_draw_sprites - sprite_index;
-
-		//assign leftovers for the main thread
-		for (int i = 0; i < remainder; i++)
-		{
-			s_renderCore.main_thread_draw_sprite_indices[i] = sprite_index++;
-			s_renderCore.num_main_thread_draw_sprites++;
-
-			if (sprite_index >= s_renderCore.num_draw_sprites)
-			{
-				break;
-			}
-		}
-	}
-
-}
-
 
 static bool Render_SetupGL(int width, int height)
 {
@@ -583,11 +520,6 @@ bool Render_Init(int width, int height)
 		return false;
 	}
 
-	if (!Image_Create(&s_renderCore.wall_buffer, width, height, 4))
-	{
-		return false;
-	}
-
 	glfwMakeContextCurrent(NULL);
 
 	s_renderCore.win_w = width;
@@ -654,11 +586,9 @@ void Render_ShutDown()
 	CloseHandle(s_renderCore.redraw_walls_event);
 
 	Image_Destruct(&s_renderCore.framebuffer);
-	Image_Destruct(&s_renderCore.wall_buffer);
 	Image_Destruct(&s_renderCore.font_data.font_image);
 
 	free(s_renderCore.depth_buffer);
-	free(s_renderCore.wall_depth_buffer);
 	free(s_renderCore.draw_spans);
 }
 
@@ -753,7 +683,6 @@ void Render_ResizeWindow(int width, int height)
 	Render_SetThreadsStartAndEnd(width);
 
 	Image_Resize(&s_renderCore.framebuffer, width, height);
-	Image_Resize(&s_renderCore.wall_buffer, width, height);
 
 	if (s_renderCore.depth_buffer)
 	{
@@ -768,20 +697,6 @@ void Render_ResizeWindow(int width, int height)
 	}
 
 	memset(s_renderCore.depth_buffer, 1e3, sizeof(float) * width * height);
-
-	if (s_renderCore.wall_depth_buffer)
-	{
-		free(s_renderCore.wall_depth_buffer);
-	}
-
-	s_renderCore.wall_depth_buffer = malloc(sizeof(float) * width * height);
-
-	if (!s_renderCore.wall_depth_buffer)
-	{
-		return;
-	}
-
-	memset(s_renderCore.wall_depth_buffer, 1e3, sizeof(float) * width * height);
 
 	if (s_renderCore.draw_spans)
 	{
@@ -813,12 +728,6 @@ void Render_View(float x, float y, float dir_x, float dir_y, float plane_x, floa
 	GameAssets* assets = Game_GetAssets();
 	GameState game_state = Game_GetState();
 
-	bool redraw_walls = false;
-	bool redraw_sprites = false;
-
-	//check if we need to redraw walls
-	redraw_walls = Render_CheckForRedraw(x, y, dir_x, dir_y, plane_x, plane_y);
-	
 	//store view information
 	s_renderCore.view_x = x;
 	s_renderCore.view_y = y;
@@ -827,61 +736,47 @@ void Render_View(float x, float y, float dir_x, float dir_y, float plane_x, floa
 	s_renderCore.plane_x = plane_x;
 	s_renderCore.plane_y = plane_y;
 
-	if (WaitForSingleObject(s_renderCore.redraw_walls_event, (DWORD)0) != WAIT_TIMEOUT)
-	{
-		redraw_walls = true;
-	}
-	if (WaitForSingleObject(s_renderCore.redraw_sprites_event, (DWORD)0) != WAIT_TIMEOUT)
-	{
-		redraw_sprites = true;
-	}
-
-	//raycast and render all wall tiles
-	if (redraw_walls && game_state == GS__LEVEL)
-	{
-		Render_WaitForAllThreads();
-
-		//clear image to black
-		Image_Clear(&s_renderCore.wall_buffer, 0);
-
-		//clear wall depth buffer
-		memset(s_renderCore.wall_depth_buffer, (int)DEPTH_CLEAR, sizeof(float) * s_renderCore.w * s_renderCore.h);
-
-		Render_SetWorkStateForAllThreads(TWT__RAYCAST);
-	}
+	//clear image to black
+	Image_Clear(&s_renderCore.framebuffer, 0);
 	
-	//draw map objects and player sprites
-	if (redraw_sprites || redraw_walls)
+	if (game_state == GS__LEVEL)
 	{
-		Render_WaitForAllThreads();
-		
-		Image_Copy(&s_renderCore.framebuffer, &s_renderCore.wall_buffer);
-		memcpy(s_renderCore.depth_buffer, s_renderCore.wall_depth_buffer, sizeof(float) * s_renderCore.w * s_renderCore.h);
-
 		Render_LockObjectMutex();
 
 		Game_Draw(&s_renderCore.framebuffer, &s_renderCore.font_data, s_renderCore.depth_buffer, s_renderCore.draw_spans, x, y, dir_x, dir_y, plane_x, plane_y);
-		
-		//Draw world sprites
-		if (s_renderCore.num_draw_sprites > 0)
+
+		//setup world draw sprites
+		int index = 0;
+
+		for (int i = 0; i < s_renderCore.num_draw_sprites; i++)
 		{
-			Render_ThreadAssignDrawSprites();
-			Render_SetWorkStateForAllThreads(TWT__DRAW_SPRITES);
+			Sprite* sprite = s_renderCore.draw_sprites[i];
 
-			for (int i = 0; i < s_renderCore.num_main_thread_draw_sprites; i++)
+			if (Video_SpriteSetup(&s_renderCore.framebuffer, sprite, s_renderCore.depth_buffer, x, y, dir_x, dir_y, plane_x, plane_y))
 			{
-				int sprite_index = s_renderCore.main_thread_draw_sprite_indices[i];
-				Sprite* sprite = s_renderCore.draw_sprites[sprite_index];
-
-				Video_DrawSprite(&s_renderCore.framebuffer, sprite, s_renderCore.depth_buffer, s_renderCore.view_x, s_renderCore.view_y, s_renderCore.dir_x, s_renderCore.dir_y, s_renderCore.plane_x, s_renderCore.plane_y);
+				s_renderCore.sorted_draw_sprite_indices[index++] = i;
 			}
-
-			Render_WaitForAllThreads();
 		}
-		//draw screen sprites
-		Game_DrawHud(&s_renderCore.framebuffer, &s_renderCore.font_data);
-		
+
+		s_renderCore.num_sorted_draw_sprites = index;
+
+
+		//clear wall depth buffer
+		memset(s_renderCore.depth_buffer, (int)DEPTH_CLEAR, sizeof(float) * s_renderCore.w * s_renderCore.h);
+
+		//set work state for all thread
+		Render_SetWorkStateForAllThreads(TWT__DRAW_LEVEL);
+
+		//wait for it to finish
+		Render_WaitForAllThreads();
+
 		Render_UnlockObjectMutex();
+
+		Game_DrawHud(&s_renderCore.framebuffer, &s_renderCore.font_data);
+	}
+	else
+	{
+		Game_Draw(&s_renderCore.framebuffer, &s_renderCore.font_data, s_renderCore.depth_buffer, s_renderCore.draw_spans, x, y, dir_x, dir_y, plane_x, plane_y);
 	}
 	if (s_renderCore.fullscreen_shader_fun)
 	{
@@ -892,22 +787,17 @@ void Render_View(float x, float y, float dir_x, float dir_y, float plane_x, floa
 		Render_WaitForAllThreads();
 	}
 
-	if (redraw_sprites || redraw_walls)
-	{
-		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, s_renderCore.w, s_renderCore.h, GL_RGBA, GL_UNSIGNED_BYTE, s_renderCore.framebuffer.data);
-	}
+	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, s_renderCore.w, s_renderCore.h, GL_RGBA, GL_UNSIGNED_BYTE, s_renderCore.framebuffer.data);
 
 	//render fullscreen quad
 	glClear(GL_COLOR_BUFFER_BIT);
 	glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
-	
-	//reset stuff
-	ResetEvent(s_renderCore.redraw_walls_event);
-	ResetEvent(s_renderCore.redraw_sprites_event);
 
+	//reset stuff
 	s_renderCore.num_draw_sprites = 0;
 	s_renderCore.num_screen_sprites = 0;
 	s_renderCore.num_main_thread_draw_sprites = 0;
+	s_renderCore.num_sorted_draw_sprites = 0;
 	s_renderCore.fullscreen_shader_fun = NULL;
 }
 
@@ -951,4 +841,25 @@ float Render_GetWindowAspect()
 	}
 
 	return (float)s_renderCore.win_w / (float)s_renderCore.win_h;
+}
+
+int Render_IsFullscreen()
+{
+	return s_renderCore.is_fullscreen;
+}
+
+void Render_ToggleFullscreen()
+{
+	s_renderCore.is_fullscreen = !s_renderCore.is_fullscreen;
+
+	GLFWwindow* window = Engine_GetWindow();
+
+	if (s_renderCore.is_fullscreen)
+	{
+		glfwSetWindowMonitor(window, glfwGetPrimaryMonitor(), 0, 0, s_renderCore.w, s_renderCore.h, GLFW_DONT_CARE);
+	}
+	else
+	{
+		glfwSetWindowMonitor(window, NULL, 0, 0, s_renderCore.w, s_renderCore.h, GLFW_DONT_CARE);
+	}
 }

@@ -342,9 +342,9 @@ static const MissileInfo MISSILE_INFO[] =
 		},
 		8, //SPEED
 		0.25, //SIZE,
-		50, //EXPLOSION DAMAGE
-		20, //EXPLOSION SIZE
-		100, //DIRECT HIT DAMAGE
+		40, //EXPLOSION DAMAGE
+		10, //EXPLOSION SIZE
+		70, //DIRECT HIT DAMAGE
 	},
 };
 
@@ -388,6 +388,8 @@ typedef enum
 	SOUND__PICKUP_HP,
 	SOUND__PICKUP_SPECIAL,
 	SOUND__PICKUP_AMMO,
+
+	SOUND__MUSIC1,
 
 	SOUND__MAX
 } SoundType;
@@ -477,6 +479,9 @@ static const char* SOUND_INFO[SOUND__MAX] =
 
 	//PICKUP AMMO
 	"assets/pickup_ammo.wav",
+
+	//MUSIC1
+	"assets/music.mp3"
 };
 
 
@@ -813,7 +818,8 @@ MissileInfo* Info_GetMissileInfo(int sub_type);
 static const char* LEVELS[] =
 {
 	"test.json",
-	"test2.json"
+	"test2.json",
+	"test3.json"
 };
 
 #endif

@@ -33,6 +33,8 @@ bool Game_Init()
 
 	Player_Init(false);
 
+	Sound_Stream(SOUND__MUSIC1);
+
 	return true;
 }
 
@@ -233,12 +235,10 @@ void Game_Draw(Image* image, FontData* fd, float* depth_buffer, DrawSpan* draw_s
 
 void Game_DrawHud(Image* image, FontData* fd)
 {
+	//only used for level state rn
+
 	switch (game.state)
 	{
-	case GS__MENU:
-	{
-		break;
-	}
 	case GS__LEVEL:
 	{
 		//draw player stuff (gun and hud)
@@ -249,14 +249,6 @@ void Game_DrawHud(Image* image, FontData* fd)
 			Text_DrawColor(image, fd, 0.25, 0.2, 1, 1, 255, 255, 255, 255, "SECRET FOUND!");
 		}
 
-		break;
-	}
-	case GS__LEVEL_END:
-	{
-		break;
-	}
-	case GS__FINALE:
-	{
 		break;
 	}
 	default:

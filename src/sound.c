@@ -95,6 +95,10 @@ static Sound* Sound_NewSound(int* r_index)
 		*r_index = index;
 	}
 
+	sound->alive = false;
+	sound->fire_and_forget = false;
+	sound->type = 0;
+
 	return sound;
 }
 
@@ -194,7 +198,7 @@ void Sound_EmitWorldTemp(int type, float x, float y, float dir_x, float dir_y)
 	snd->fire_and_forget = true;
 	snd->alive = true;
 	
-	Sound_load(sound_file, 0, &snd->snd);
+	Sound_load(sound_file, MA_SOUND_FLAG_NO_PITCH, &snd->snd);
 	
 	ma_sound_set_position(&snd->snd, x, 0, y);
 	ma_sound_set_direction(&snd->snd, dir_x, 0, dir_y);
@@ -227,7 +231,7 @@ int Sound_EmitWorld(int type, float x, float y, float dir_x, float dir_y)
 	snd->alive = true;
 	snd->type = type;
 
-	Sound_load(sound_file, 0, &snd->snd);
+	Sound_load(sound_file, MA_SOUND_FLAG_NO_PITCH, &snd->snd);
 
 	ma_sound_set_position(&snd->snd, x, 0, y);
 	ma_sound_set_direction(&snd->snd, dir_x, 0, dir_y);
@@ -289,7 +293,7 @@ void Sound_Emit(int type, float volume)
 	snd->fire_and_forget = true;
 	snd->alive = true;
 
-	Sound_load(sound_file, 0, &snd->snd);
+	Sound_load(sound_file, MA_SOUND_FLAG_NO_SPATIALIZATION | MA_SOUND_FLAG_NO_PITCH, &snd->snd);
 	
 	ma_sound_set_volume(&snd->snd, volume);
 	ma_sound_start(&snd->snd);
@@ -330,6 +334,36 @@ void Sound_Stop(int id)
 	}
 
 	ma_sound_stop(&snd->snd);
+}
+
+void Sound_Stream(int type)
+{
+	if (type < 0 || type >= SOUND__MAX)
+	{
+		return;
+	}
+
+	const char* sound_file = SOUND_INFO[type];
+
+	if (!sound_file)
+	{
+		return;
+	}
+
+	Sound* snd = Sound_NewSound(NULL);
+
+	if (!snd)
+	{
+		return;
+	}
+
+	snd->type = type;
+	snd->alive = true;
+
+	Sound_load(sound_file, MA_SOUND_FLAG_NO_SPATIALIZATION | MA_SOUND_FLAG_NO_PITCH | MA_SOUND_FLAG_STREAM, &snd->snd);
+
+	ma_sound_set_looping(&snd->snd, true);
+	ma_sound_start(&snd->snd);
 }
 
 int Sound_Init()

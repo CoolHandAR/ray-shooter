@@ -919,14 +919,14 @@ TileID Map_GetFloorTile(int x, int y)
 
 TileID Map_GetCeilTile(int x, int y)
 {
-	if (x < 0 || y < 0 || x >= s_map.floor_width || y >= s_map.floor_height || !s_map.floor_tiles)
+	if (x < 0 || y < 0 || x >= s_map.ceil_width || y >= s_map.ceil_height || !s_map.ceil_tiles)
 	{
 		return EMPTY_TILE + 1;
 	}
 
-	size_t index = x + y * s_map.floor_width;
+	size_t index = x + y * s_map.ceil_width;
 
-	assert(index < s_map.floor_width * s_map.floor_height);
+	assert(index < s_map.ceil_width * s_map.ceil_height);
 
 	return s_map.ceil_tiles[index];
 }

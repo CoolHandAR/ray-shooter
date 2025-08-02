@@ -803,13 +803,13 @@ void Monster_Imp_FireBall(Object* obj)
 		return;
 	}
 
-	Sound_EmitWorldTemp(SOUND__FIREBALL_THROW, obj->x, obj->y, obj->dir_x, obj->dir_y);
-
 	Monster_FaceTarget(obj);
 	
 	Object* missile = Object_Missile(obj, target, SUB__MISSILE_FIREBALL);
 
 	missile->owner = obj;
+
+	Sound_EmitWorldTemp(SOUND__FIREBALL_THROW, missile->x, missile->y, missile->dir_x, missile->dir_y);
 }
 
 void Monster_Bruiser_FireBall(Object* obj)
@@ -825,14 +825,14 @@ void Monster_Bruiser_FireBall(Object* obj)
 
 	for (int i = -2; i < 2; i++)
 	{
-		Sound_EmitWorldTemp(SOUND__FIREBALL_THROW, obj->x, obj->y, obj->dir_x, obj->dir_y);
-
 		Object* missile = Object_Missile(obj, target, SUB__MISSILE_FIREBALL);
 		
 		missile->dir_x += i * 0.1;
 		missile->dir_y += i * 0.1;
 
 		missile->owner = obj;
+
+		Sound_EmitWorldTemp(SOUND__FIREBALL_THROW, missile->x, missile->y, missile->dir_x, missile->dir_y);
 	}
 }
 

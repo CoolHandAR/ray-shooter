@@ -133,13 +133,8 @@ bool Object_HandleObjectCollision(Object* obj, Object* collision_obj)
 		return true;
 	}
 
-	if (collision_obj->type == OT__PARTICLE)
-	{
-		return;
-	}
-
 	//some objects are ignored from collisions
-	if (collision_obj->type == OT__LIGHT || collision_obj->type == OT__TARGET || collision_obj->hp <= 0)
+	if (collision_obj->type == OT__PARTICLE || collision_obj->type == OT__TARGET || collision_obj->hp <= 0)
 	{
 		return true;
 	}
@@ -241,6 +236,15 @@ bool Object_HandleObjectCollision(Object* obj, Object* collision_obj)
 
 		//missiles dont block movement
 		return true;
+
+		break;
+	}
+	case OT__LIGHT:
+	{
+		if (collision_obj->sub_type == SUB__LIGHT_LAMP)
+		{
+			return true;
+		}
 
 		break;
 	}

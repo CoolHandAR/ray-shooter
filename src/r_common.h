@@ -248,6 +248,16 @@ typedef struct
 	int frame_offset_x;
 	int frame_offset_y;
 
+	//for rendering
+	int r_draw_start_x;
+	int r_draw_end_x;
+	int r_draw_start_y;
+	int r_draw_end_y;
+	int r_width, r_height;
+	int r_light;
+	int r_screen_x;
+	float r_transform_y;
+
 	//image data
 	Image* img;
 } Sprite;
@@ -263,6 +273,8 @@ void Video_RaycastFloorCeilling(Image* image, Image* texture, float* depth_buffe
 void Video_RaycastMap(Image* image, Image* texture, float* depth_buffer, DrawSpan* draw_spans, int x_start, int x_end, float p_x, float p_y, float p_dirX, float p_dirY, float p_planeX, float p_planeY);
 bool Video_DrawCollumn(Image* image, Image* texture, int x, float size, float* depth_buffer, int tex_x, float wall_dist, unsigned char light, int tile, int spans, int doors_drawn, int* r_draw_start, int* r_draw_end);
 void Video_DrawSprite(Image* image, Sprite* sprite, float* depth_buffer, float p_x, float p_y, float p_dirX, float p_dirY, float p_planeX, float p_planeY);
+bool Video_SpriteSetup(Image* image, Sprite* sprite, float* depth_buffer, float p_x, float p_y, float p_dirX, float p_dirY, float p_planeX, float p_planeY);
+void Video_SpriteClipAndDraw(Image* image, Sprite* sprite, float* depth_buffer, int x_start, int x_end);
 void Video_DrawScreenTexture(Image* image, Image* texture, float p_x, float p_y, float p_scaleX, float p_scaleY);
 void Video_DrawScreenSprite(Image* image, Sprite* sprite);
 
@@ -290,6 +302,8 @@ void Render_GetRenderSize(int* r_width, int* r_height);
 int Render_GetRenderScale();
 void Render_SetRenderScale(int scale);
 float Render_GetWindowAspect();
+int Render_IsFullscreen();
+void Render_ToggleFullscreen();
 
 #define MAX_FONT_GLYPHS 100
 
