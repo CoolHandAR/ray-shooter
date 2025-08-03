@@ -272,7 +272,7 @@ static void Render_ThreadLoop(RenderThread* thread)
 		case TWT__DRAW_LEVEL:
 		{
 			Video_RaycastMap(&s_renderCore.framebuffer, &assets->wall_textures, s_renderCore.depth_buffer, s_renderCore.draw_spans, thread->x_start, thread->x_end, s_renderCore.view_x, s_renderCore.view_y, s_renderCore.dir_x, s_renderCore.dir_y, s_renderCore.plane_x, s_renderCore.plane_y);
-			
+
 			for (int i = 0; i < s_renderCore.num_sorted_draw_sprites; i++)
 			{
 				int sprite_index = s_renderCore.sorted_draw_sprite_indices[i];
@@ -324,13 +324,13 @@ static void Render_SetWorkStateForAllThreads(ThreadWorkType work_type)
 	for (int i = 0; i < NUM_RENDER_THREADS; i++)
 	{
 		RenderThread* thr = &s_renderCore.threads[i];
-		
+
 		Render_ThreadMutexLock(thr);
 
 		thr->work_type = work_type;
 
 		SetEvent(thr->start_work_event);
-		
+
 		WaitForSingleObject(thr->active_event, INFINITE);
 
 		Render_ThreadMutexUnlock(thr);
@@ -495,7 +495,7 @@ void Render_WindowCallback(GLFWwindow* window, int width, int height)
 {
 	s_renderCore.win_w = width;
 	s_renderCore.win_h = height;
-	
+
 	Render_SizeChanged();
 }
 
@@ -678,7 +678,7 @@ void Render_RedrawSprites()
 }
 
 void Render_ResizeWindow(int width, int height)
-{	
+{
 	Render_FinishAndStall();
 	Render_SetThreadsStartAndEnd(width);
 
@@ -738,7 +738,7 @@ void Render_View(float x, float y, float dir_x, float dir_y, float plane_x, floa
 
 	//clear image to black
 	Image_Clear(&s_renderCore.framebuffer, 0);
-	
+
 	if (game_state == GS__LEVEL)
 	{
 		Render_LockObjectMutex();
@@ -828,7 +828,7 @@ void Render_SetRenderScale(int scale)
 	{
 		scale = MAX_RENDER_SCALE;
 	}
-	
+
 	s_renderCore.scale = scale;
 
 	Render_ResizeWindow(BASE_RENDER_WIDTH * scale, BASE_RENDER_HEIGHT * scale);

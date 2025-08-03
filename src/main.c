@@ -126,14 +126,6 @@ static bool Engine_SetupSubSystems()
 
 	printf("Sound loaded \n");
 
-	if (!Game_Init())
-	{
-		printf("ERROR::Failed to load game assets!\n");
-		return false;
-	}
-
-	printf("Game loaded \n");
-
 	//load glfw
 	if (!glfwInit())
 	{
@@ -163,7 +155,7 @@ static bool Engine_SetupSubSystems()
 	printf("Renderer: %s\n", glGetString(GL_RENDERER));
 	printf("Version:  %s\n", glGetString(GL_VERSION));
 
-	glfwSwapInterval(1);
+	glfwSwapInterval(0);
 
 	if (!Render_Init(WINDOW_WIDTH * WINDOW_SCALE, WINDOW_HEIGHT * WINDOW_SCALE))
 	{
@@ -172,6 +164,14 @@ static bool Engine_SetupSubSystems()
 	}
 
 	printf("Renderer Loaded\n");
+
+	if (!Game_Init())
+	{
+		printf("ERROR::Failed to load game assets!\n");
+		return false;
+	}
+
+	printf("Game loaded \n");
 
 	return true;
 }

@@ -565,6 +565,7 @@ void Sprite_UpdateAnimation(Sprite* sprite, float delta)
 	}
 
 	int old_frame = sprite->frame;
+	int frame = sprite->frame;
 
 	float remaining = delta;
 
@@ -589,22 +590,22 @@ void Sprite_UpdateAnimation(Sprite* sprite, float delta)
 			if (sprite->_anim_frame_progress >= 1.0)
 			{
 				//anim restart
-				if (sprite->frame >= last_frame)
+				if (frame >= last_frame)
 				{
 					if (sprite->looping)
 					{
 						sprite->loops++;
-						sprite->frame = 0;
+						frame = 0;
 					}
 					else
 					{
-						sprite->frame = last_frame;
+						frame = last_frame;
 						sprite->playing = false;
 					}
 				}
 				else
 				{
-					sprite->frame++;
+					frame++;
 				}
 				sprite->_anim_frame_progress = 0.0;
 			}
@@ -621,10 +622,7 @@ void Sprite_UpdateAnimation(Sprite* sprite, float delta)
 		}
 	}
 
-	if (sprite->frame != old_frame || !sprite->playing)
-	{
-		Render_RedrawSprites();
-	}
+	sprite->frame = frame;
 }
 
 void Sprite_ResetAnimState(Sprite* sprite)

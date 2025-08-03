@@ -840,6 +840,11 @@ void Player_Update(GLFWwindow* window, float delta)
 
 void Player_GetView(float* r_x, float* r_y, float* r_dirX, float* r_dirY, float* r_planeX, float* r_planeY)
 {
+	if (!player.obj)
+	{
+		return;
+	}
+
 	if(r_x) *r_x = player.obj->x;
 	if(r_y) *r_y = player.obj->y;
 	if(r_dirX) *r_dirX = player.obj->dir_x;

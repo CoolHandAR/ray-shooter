@@ -164,6 +164,11 @@ bool Sound_createGroup(unsigned p_flags, ma_sound_group* r_group)
 
 void Sound_setMasterVolume(float volume)
 {
+	if (volume < 0)
+	{
+		volume = 0;
+	}
+
 	sound_core.master_volume = volume;
 	ma_engine_set_volume(&sound_core.sound_engine, volume);
 }

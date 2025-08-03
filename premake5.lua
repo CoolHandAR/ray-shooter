@@ -1,6 +1,7 @@
 -- premake5.lua
 
 function setup_dirs(path)
+   zip.extract("assets/assets.zip", "assets")
    zip.extract("assets/assets.zip", path)
    os.mkdir("lib")
 end
