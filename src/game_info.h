@@ -295,7 +295,7 @@ static const MonsterInfo MONSTER_INFO[] =
 		2, //SPEED,
 		30, //MELEE DAMAGE
 		2, //SPRITE SCALE
-		-1, //SPRTE V OFFSET
+		-0.5, //SPRTE V OFFSET
 	},
 };
 
@@ -523,7 +523,7 @@ static const GunInfo GUN_INFOs[GUN__MAX] =
 		GUN__MACHINEGUN,
 		15, //DMG
 		1, //SPREAD
-		0.2, //CD,
+		0.17, //CD,
 		0.2, //SCREEN X
 		0.18, //SCREEN Y
 		1.5, //SCALE

@@ -32,5 +32,6 @@ void Sound_Set(int id, float x, float y, float dir_x, float dir_y);
 void Sound_Play(int id);
 void Sound_Stop(int id);
 void Sound_Stream(int type);
+void Sound_SetAsMusic(int type);
 
 #endif

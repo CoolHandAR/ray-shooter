@@ -20,13 +20,14 @@
 
 typedef struct
 {
-	float time_scale;
-	float delta;
+	double time_scale;
+	double delta;
 	uint64_t ticks;
 	GLFWwindow* window;
 } EngineData;
 
 static EngineData s_engine;
+static double MIN_DT = 1.0 / 1000000.0;
 
 extern void Render_WindowCallback(GLFWwindow* window, int width, int height);
 
@@ -155,7 +156,7 @@ static bool Engine_SetupSubSystems()
 	printf("Renderer: %s\n", glGetString(GL_RENDERER));
 	printf("Version:  %s\n", glGetString(GL_VERSION));
 
-	glfwSwapInterval(0);
+	glfwSwapInterval(1);
 
 	if (!Render_Init(WINDOW_WIDTH * WINDOW_SCALE, WINDOW_HEIGHT * WINDOW_SCALE))
 	{
@@ -233,8 +234,8 @@ int main()
 		return -1;
 	}
 
-	float lastTime = 0;
-	float currentTime = 0;
+	double lastTime = 0;
+	double currentTime = 0;
 
 	s_engine.time_scale = 1.0;
 
@@ -246,22 +247,22 @@ int main()
 	//attempt to load cfg
 	Engine_LoadCfg("config.cfg");
 
-	Render_ToggleFullscreen();
+	//Render_ToggleFullscreen();
 
 	//MAIN LOOP
-	while (!glfwWindowShouldClose(s_engine.window))
+	while (!glfwWindowShouldClose(s_engine.window) && Game_GetState() != GS__EXIT)
 	{
-		if (Game_GetState() == GS__EXIT)
-		{
-			break;
-		}
-
 		currentTime = glfwGetTime();
 		s_engine.delta = currentTime - lastTime;
 		lastTime = currentTime;
 
 		s_engine.delta *= s_engine.time_scale;
 
+		if (s_engine.delta < MIN_DT)
+		{
+			s_engine.delta = MIN_DT;
+		}
+		
 		Game_Update(s_engine.delta);
 		
 		glfwPollEvents();

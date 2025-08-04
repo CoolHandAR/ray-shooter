@@ -8,8 +8,9 @@
 #include <stdlib.h>
 
 #define MONSTER_MELEE_CHECK 5
+#define STUCK_TIMER 2
 
-static DirEnum opposite_dirs[DIR_MAX] =
+static const DirEnum opposite_dirs[DIR_MAX] =
 {
 	//NONE			//NORTH
 	DIR_NONE,		DIR_SOUTH,
@@ -23,12 +24,12 @@ static DirEnum opposite_dirs[DIR_MAX] =
 	DIR_EAST
 };
 
-static DirEnum angle_dirs[] =
+static const DirEnum angle_dirs[] =
 {
 	DIR_NORTH_WEST, DIR_NORTH_EAST, DIR_SOUTH_WEST, DIR_SOUTH_EAST
 };
 
-static float x_diags[DIR_MAX] =
+static const float x_diags[DIR_MAX] =
 {
 	//NONE			//NORTH
 	0,				0,
@@ -41,7 +42,7 @@ static float x_diags[DIR_MAX] =
 	//WEST			//MAX
 	1
 };
-static float y_diags[DIR_MAX] =
+static const float y_diags[DIR_MAX] =
 {
 	//NONE			//NORTH
 	0,				-1,
@@ -401,7 +402,7 @@ static bool Monster_Walk(Object* obj, float delta)
 
 	obj->stuck_timer += delta;
 
-	if (obj->stuck_timer >= 2)
+	if (obj->stuck_timer >= STUCK_TIMER)
 	{
 		if (Move_Unstuck(obj))
 		{
@@ -471,17 +472,24 @@ static void Monster_NewChaseDir(Object* obj, float delta)
 
 	DirEnum old_dir = obj->dir_enum;
 	DirEnum opposite_dir = opposite_dirs[old_dir];
+	DirEnum opposite_dir_x = 0;
+	DirEnum opposite_dir_y = 0;
+	DirEnumToDirEnumVector(opposite_dir, &opposite_dir_x, &opposite_dir_y);
+	bool dir_tries[DIR_MAX];
+	memset(&dir_tries, 0, sizeof(dir_tries));
 
 	//try direct route
 	obj->dir_enum = DIR_NONE;
 
 	DirEnum dirs[2];
 
-	if (dir_x > 0)
+	static float bias_size = 0.25;
+
+	if (dir_x > bias_size)
 	{
 		dirs[0] = DIR_WEST;
 	}
-	else if (dir_x < 0)
+	else if (dir_x < -bias_size)
 	{
 		dirs[0] = DIR_EAST;
 	}
@@ -489,11 +497,11 @@ static void Monster_NewChaseDir(Object* obj, float delta)
 	{
 		dirs[0] = DIR_NONE;
 	}
-	if (dir_y > 0)
+	if (dir_y > bias_size)
 	{
 		dirs[1] = DIR_SOUTH;
 	}
-	else if (dir_y < 0)
+	else if (dir_y < -bias_size)
 	{
 		dirs[1] = DIR_NORTH;
 	}
@@ -502,17 +510,16 @@ static void Monster_NewChaseDir(Object* obj, float delta)
 		dirs[1] = DIR_NONE;
 	}
 
-
 	if (dirs[0] != DIR_NONE && dirs[1] != DIR_NONE)
 	{
 		int i_x = (dirs[0] == DIR_EAST);
 		int i_y = (dirs[1] == DIR_SOUTH) ? 2 : 0;
 		DirEnum d = angle_dirs[i_x + i_y];
 
-		if (d != opposite_dir)
+		if (d != opposite_dir && d != opposite_dir_x && d != opposite_dir_y)
 		{
 			obj->dir_enum = d;
-
+			dir_tries[obj->dir_enum] = true;
 			if (Monster_TryStep(obj, delta))
 			{
 				return;
@@ -520,56 +527,58 @@ static void Monster_NewChaseDir(Object* obj, float delta)
 		}
 	}
 
-	int r = rand() % 100;
 
-	//attempt to swap directions
-	if (r > 50 || abs(dir_y) > abs(dir_x))
+	if (rand() > 200)
 	{
-		int t = dirs[0];
-		dirs[0] = dirs[1];
-		dirs[1] = t;
-	}
-	if (dirs[0] == opposite_dir)
-	{
-		dirs[0] = DIR_NONE;
-	}
-	if (dirs[1] == opposite_dir)
-	{
-		dirs[1] = DIR_NONE;
-	}
-	if (dirs[0] != DIR_NONE)
-	{
-		obj->dir_enum = dirs[0];
-		if (Monster_TryStep(obj, delta))
+		//attempt to swap directions
+		if (rand() > 150 || fabs(dir_y) > fabs(dir_x))
 		{
-			return;
+			int t = dirs[0];
+			dirs[0] = dirs[1];
+			dirs[1] = t;
+		}
+
+		if (dirs[0] != opposite_dir && dirs[0] != opposite_dir_x && dirs[0] != opposite_dir_y && !dir_tries[dirs[0]])
+		{
+			obj->dir_enum = dirs[0];
+			dir_tries[obj->dir_enum] = true;
+			if (Monster_TryStep(obj, delta))
+			{
+				return;
+			}
+		}
+		if (dirs[1] != opposite_dir && dirs[1] != opposite_dir_x && dirs[1] != opposite_dir_y && !dir_tries[dirs[1]])
+		{
+			obj->dir_enum = dirs[1];
+			dir_tries[obj->dir_enum] = true;
+			if (Monster_TryStep(obj, delta))
+			{
+				return;
+			}
+		}
+
+		//try old dir
+		if (old_dir != DIR_NONE && !dir_tries[old_dir])
+		{
+			obj->dir_enum = old_dir;
+			dir_tries[obj->dir_enum] = true;
+			if (Monster_TryStep(obj, delta))
+			{
+				return;
+			}
 		}
 	}
-	if (dirs[1] != DIR_NONE)
-	{
-		obj->dir_enum = dirs[1];
-		if (Monster_TryStep(obj, delta))
-		{
-			return;
-		}
-	}
-	if (old_dir != DIR_NONE)
-	{
-		obj->dir_enum = old_dir;
-		if (Monster_TryStep(obj, delta))
-		{
-			return;
-		}
-	}
+	
 
 	//try random directions
 	if (rand() & 1)
 	{
 		for (int i = DIR_NONE + 1; i < DIR_MAX; i++)
 		{
-			if (i != opposite_dir)
+			if (i != opposite_dir && !dir_tries[i])
 			{
 				obj->dir_enum = i;
+				dir_tries[obj->dir_enum] = true;
 				if (Monster_TryStep(obj, delta))
 				{
 					return;
@@ -581,9 +590,10 @@ static void Monster_NewChaseDir(Object* obj, float delta)
 	{
 		for (int i = DIR_MAX - 1; i > DIR_NONE; i--)
 		{
-			if (i != opposite_dir)
+			if (i != opposite_dir && !dir_tries[i])
 			{
 				obj->dir_enum = i;
+				dir_tries[obj->dir_enum] = true;
 				if (Monster_TryStep(obj, delta))
 				{
 					return;
@@ -591,7 +601,7 @@ static void Monster_NewChaseDir(Object* obj, float delta)
 			}
 		}
 	}
-	if (opposite_dir != DIR_NONE)
+	if (opposite_dir != DIR_NONE && !dir_tries[opposite_dir])
 	{
 		obj->dir_enum = opposite_dir;
 		if (Monster_TryStep(obj, delta))

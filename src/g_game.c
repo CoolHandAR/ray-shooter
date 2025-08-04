@@ -33,7 +33,7 @@ bool Game_Init()
 
 	Player_Init(false);
 
-	Sound_Stream(SOUND__MUSIC1);
+	Sound_SetAsMusic(SOUND__MUSIC1);
 
 	return true;
 }

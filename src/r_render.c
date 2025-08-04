@@ -123,8 +123,6 @@ typedef struct
 	HANDLE main_thread_active_event;
 	HANDLE main_thread_standby_event;
 	HANDLE main_thread_handle;
-	HANDLE redraw_sprites_event;
-	HANDLE redraw_walls_event;
 
 	bool stall_main_thread;
 	bool size_changed;
@@ -533,8 +531,6 @@ bool Render_Init(int width, int height)
 	InitializeConditionVariable(&s_renderCore.main_thread_cv);
 	s_renderCore.main_thread_active_event = CreateEvent(NULL, TRUE, FALSE, NULL);
 	s_renderCore.main_thread_standby_event = CreateEvent(NULL, TRUE, FALSE, NULL);
-	s_renderCore.redraw_sprites_event = CreateEvent(NULL, TRUE, TRUE, NULL);
-	s_renderCore.redraw_walls_event = CreateEvent(NULL, TRUE, TRUE, NULL);
 
 	for (int i = 0; i < NUM_RENDER_THREADS; i++)
 	{
@@ -582,8 +578,6 @@ void Render_ShutDown()
 	DeleteCriticalSection(&s_renderCore.object_mutex);
 	CloseHandle(s_renderCore.main_thread_active_event);
 	CloseHandle(s_renderCore.main_thread_standby_event);
-	CloseHandle(s_renderCore.redraw_sprites_event);
-	CloseHandle(s_renderCore.redraw_walls_event);
 
 	Image_Destruct(&s_renderCore.framebuffer);
 	Image_Destruct(&s_renderCore.font_data.font_image);
@@ -669,12 +663,12 @@ void Render_QueueFullscreenShader(ShaderFun shader_fun)
 
 void Render_RedrawWalls()
 {
-	SetEvent(s_renderCore.redraw_walls_event);
+	//SetEvent(s_renderCore.redraw_walls_event);
 }
 
 void Render_RedrawSprites()
 {
-	SetEvent(s_renderCore.redraw_sprites_event);
+	//SetEvent(s_renderCore.redraw_sprites_event);
 }
 
 void Render_ResizeWindow(int width, int height)
@@ -759,7 +753,6 @@ void Render_View(float x, float y, float dir_x, float dir_y, float plane_x, floa
 		}
 
 		s_renderCore.num_sorted_draw_sprites = index;
-
 
 		//clear wall depth buffer
 		memset(s_renderCore.depth_buffer, (int)DEPTH_CLEAR, sizeof(float) * s_renderCore.w * s_renderCore.h);

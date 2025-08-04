@@ -391,6 +391,12 @@ bool Object_CheckLineToTile(Object* obj, float target_x, float target_y)
 		{
 			return false;
 		}
+
+		//thing blocks the line
+		if (tile_obj->type == OT__THING)
+		{
+			return false;
+		}
 	}
 
 	return true;
@@ -667,6 +673,11 @@ void Object_Hurt(Object* obj, Object* src_obj, int damage)
 Object* Object_Missile(Object* obj, Object* target, int type)
 {
 	Object* missile = Map_NewObject(OT__MISSILE);
+
+	if (!missile)
+	{
+		return NULL;
+	}
 
 	GameAssets* assets = Game_GetAssets();
 

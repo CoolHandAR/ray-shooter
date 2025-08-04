@@ -1125,12 +1125,13 @@ bool Video_SpriteSetup(Image* image, Sprite* sprite, float* depth_buffer, float 
 
 	//big bias for occlusion testing
 	//since otherwise we get incorrect culling
-	float check_size = 10;
+	float check_size_x = 8 * sprite->scale_x;
+	float check_size_y = 8 * sprite->scale_y;
 
-	float t0 = inv_det * (-p_planeY * (local_sprite_x - check_size) + p_planeX * (local_sprite_y - check_size));
-	float t1 = inv_det * (-p_planeY * (local_sprite_x + check_size) + p_planeX * (local_sprite_y - check_size));
-	float t2 = inv_det * (-p_planeY * (local_sprite_x - check_size) + p_planeX * (local_sprite_y + check_size));
-	float t3 = inv_det * (-p_planeY * (local_sprite_x + check_size) + p_planeX * (local_sprite_y + check_size));
+	float t0 = inv_det * (-p_planeY * (local_sprite_x - check_size_x) + p_planeX * (local_sprite_y - check_size_y));
+	float t1 = inv_det * (-p_planeY * (local_sprite_x + check_size_x) + p_planeX * (local_sprite_y - check_size_y));
+	float t2 = inv_det * (-p_planeY * (local_sprite_x - check_size_x) + p_planeX * (local_sprite_y + check_size_y));
+	float t3 = inv_det * (-p_planeY * (local_sprite_x + check_size_x) + p_planeX * (local_sprite_y + check_size_y));
 
 	//check if all edges are fully occluded
 	if (t0 >= d0 && t1 >= d1 && t2 >= d2 && t3 >= d3)

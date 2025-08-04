@@ -443,8 +443,9 @@ void Missile_Update(Object* obj, float delta)
 	//the explosion animation is still playing
 	if (exploding)
 	{
-		//the animation is finished, delete the object
-		if (!obj->sprite.playing)
+		obj->move_timer += delta;
+		//the animation is finished or timer has passes, delete the object
+		if (!obj->sprite.playing || obj->move_timer > 10)
 		{
 			Map_DeleteObject(obj);
 		}
@@ -803,6 +804,26 @@ DirEnum DirVectorToRoundedDirEnum(int x, int y)
 	}
 
 	return DIR_NONE;
+}
+
+void DirEnumToDirEnumVector(DirEnum dir, DirEnum* r_x, DirEnum* r_y)
+{
+	if (dir == DIR_WEST || dir == DIR_NORTH_WEST || dir == DIR_SOUTH_WEST)
+	{
+		*r_x = DIR_WEST;
+	}
+	else if (dir == DIR_EAST || dir == DIR_NORTH_EAST || dir == DIR_SOUTH_EAST)
+	{
+		*r_x = DIR_EAST;
+	}
+	if (dir == DIR_NORTH || dir == DIR_NORTH_WEST || dir ==  DIR_NORTH_EAST)
+	{
+		*r_y = DIR_NORTH;
+	}
+	else if (dir == DIR_SOUTH || dir == DIR_SOUTH_WEST || dir == DIR_SOUTH_EAST)
+	{
+		*r_y = DIR_SOUTH;
+	}
 }
 
 void Particle_Update(Object* obj, float delta)

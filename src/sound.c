@@ -14,6 +14,8 @@ typedef struct
 	int num_sounds;
 	int max_index;
 	float master_volume;
+
+	ma_sound music_snd;
 } SoundCore;
 
 static SoundCore sound_core;
@@ -31,7 +33,7 @@ static void Sound_FreeListStoreID(int id)
 static int Sound_GetNewIndex()
 {
 	int id = -1;
-	//get from free list
+
 	if (sound_core.num_free_list > 0)
 	{
 		id = sound_core.free_list[sound_core.num_free_list - 1];
@@ -41,7 +43,28 @@ static int Sound_GetNewIndex()
 	{
 		id = sound_core.num_sounds++;
 	}
+	else
+	{
+		for (int i = 0; i < sound_core.num_sounds; i++)
+		{
+			Sound* snd = &sound_core.sounds[i];
 
+			if (snd->fire_and_forget && snd->alive)
+			{
+				if (ma_sound_at_end(&snd->snd) && !ma_sound_is_playing(&snd->snd))
+				{
+					Sound_DeleteSound(i);
+				}
+			}
+		}
+		if (sound_core.num_free_list > 0)
+		{
+			id = sound_core.free_list[sound_core.num_free_list - 1];
+			sound_core.num_free_list--;
+		}
+
+
+	}
 	sound_core.max_index = max(sound_core.max_index, id);
 
 	return id;
@@ -58,7 +81,7 @@ static void Sound_FreeUnusedSounds()
 
 		if (snd->fire_and_forget && snd->alive)
 		{
-			if (!ma_sound_is_playing(&snd->snd))
+			if (!ma_sound_at_end(&snd->snd))
 			{
 				Sound_DeleteSound(i);
 				continue;
@@ -71,16 +94,12 @@ static void Sound_FreeUnusedSounds()
 		}
 	}
 
-	sound_core.num_sounds = num_sounds;
+	//sound_core.num_sounds = num_sounds;
+	
 }
 
 static Sound* Sound_NewSound(int* r_index)
 {
-	if (sound_core.num_sounds >= MAX_SOUNDS)
-	{
-		Sound_FreeUnusedSounds();
-	}
-
 	int index = Sound_GetNewIndex();
 
 	if (index == -1)
@@ -275,6 +294,7 @@ int Sound_Preload(int type)
 
 void Sound_Emit(int type, float volume)
 {
+
 	if (type < 0 || type >= SOUND__MAX)
 	{
 		return;
@@ -369,6 +389,26 @@ void Sound_Stream(int type)
 
 	ma_sound_set_looping(&snd->snd, true);
 	ma_sound_start(&snd->snd);
+}
+
+void Sound_SetAsMusic(int type)
+{
+	if (type < 0 || type >= SOUND__MAX)
+	{
+		return;
+	}
+
+	const char* sound_file = SOUND_INFO[type];
+
+	if (!sound_file)
+	{
+		return;
+	}
+
+	Sound_load(sound_file, MA_SOUND_FLAG_NO_SPATIALIZATION | MA_SOUND_FLAG_NO_PITCH, &sound_core.music_snd);
+
+	ma_sound_set_looping(&sound_core.music_snd, true);
+	ma_sound_start(&sound_core.music_snd);
 }
 
 int Sound_Init()

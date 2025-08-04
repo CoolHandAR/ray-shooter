@@ -50,11 +50,6 @@ static void Map_UpdateSortedList()
 	{
 		Object* obj = &s_map.objects[i];
 
-		if (obj->type != OT__NONE)
-		{
-			max_index = i;
-		}
-
 		if (obj->type == OT__NONE
 			|| obj->type == OT__PLAYER)
 		{
@@ -62,10 +57,15 @@ static void Map_UpdateSortedList()
 		}
 
 		s_map.sorted_list[index++] = i;
+
+		if (i > max_index)
+		{
+			max_index = i;
+		}
 	}
 
+	//s_map.num_objects = max_index + 1;
 	s_map.num_sorted_objects = index;
-	//s_map.num_objects = max_index;
 }
 
 static void Map_UpdateObjectTilemap()
@@ -323,7 +323,7 @@ static void Map_FreeListStoreID(ObjectID id)
 
 static ObjectID Map_GetNewObjectIndex()
 {
-	ObjectID id = 0;
+	ObjectID id = -1;
 	//get from free list
 	if (s_map.num_free_list > 0)
 	{
@@ -332,7 +332,10 @@ static ObjectID Map_GetNewObjectIndex()
 	}
 	else
 	{
-		id = s_map.num_objects++;
+		if (s_map.num_objects < MAX_OBJECTS)
+		{
+			id = s_map.num_objects++;
+		}
 	}
 
 	return id;
@@ -355,12 +358,12 @@ Map* Map_GetMap()
 
 Object* Map_NewObject(ObjectType type)
 {
-	if (s_map.num_objects >= MAX_OBJECTS)
-	{
-		assert(false && "Too many objects");
-	}
-
 	ObjectID index = Map_GetNewObjectIndex();
+
+	if (index < 0)
+	{
+		return NULL;
+	}
 
 	Object* obj = &s_map.objects[index];
 
@@ -371,8 +374,6 @@ Object* Map_NewObject(ObjectType type)
 	obj->type = type;
 	obj->hp = 1;
 	obj->size = 0.5;
-
-	s_map.num_objects++;
 
 	Map_UpdateSortedList();
 
@@ -1254,12 +1255,6 @@ void Map_DrawObjects(Image* image, float* depth_buffer, DrawSpan* draw_spans, fl
 
 void Map_UpdateObjects(float delta)
 {
-	if (s_map.dirty_temp_light)
-	{
-		Map_ClearTempLight();
-		s_map.dirty_temp_light = false;
-	}
-
 	float view_x, view_y, dir_x, dir_y, dir_z, plane_x, plane_y;
 	Player_GetView(&view_x, &view_y, &dir_x, &dir_y, &plane_x, &plane_y);
 
@@ -1268,6 +1263,11 @@ void Map_UpdateObjects(float delta)
 	for (int i = 0; i < s_map.num_sorted_objects; i++)
 	{
 		ObjectID id = s_map.sorted_list[i];
+		if (id < 0)
+		{
+			continue;
+		}
+
 		Object* obj = &s_map.objects[id];
 
 		obj->sprite.skip_draw = false;

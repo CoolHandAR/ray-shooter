@@ -338,6 +338,11 @@ static void Player_ShootGun()
 		for (int i = 0; i < 2; i++)
 		{
 			Object* missile = Object_Missile(player.obj, NULL, SUB__MISSILE_MEGASHOT);
+
+			if (!missile)
+			{
+				break;
+			}
 			
 			float offset = (float)i * DEV_ANGLE;
 

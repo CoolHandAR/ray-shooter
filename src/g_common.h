@@ -385,6 +385,7 @@ Object* Object_Spawn(ObjectType type, SubType sub_type, float x, float y);
 //Dir stuff
 DirEnum DirVectorToDirEnum(int x, int y);
 DirEnum DirVectorToRoundedDirEnum(int x, int y);
+void DirEnumToDirEnumVector(DirEnum dir, DirEnum* r_x, DirEnum* r_y);
 
 //Particle stuff
 void Particle_Update(Object* obj, float delta);
