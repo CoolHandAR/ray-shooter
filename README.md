@@ -5,7 +5,7 @@
 ![SCREENSHOT](image.png)
 
 ## Video
-https://www.youtube.com/watch?v=M8mwkadGiJQ
+https://www.youtube.com/watch?v=weuWWwH3QYY
 
 ## Multithreaded Software Renderer
 Raycasting and rendering is done on the cpu. Multiple threads are used for rendering. Each thread is assigned a horizontal slice and then it performs raycasting, draws walls and sprites.  
